@@ -1,0 +1,23 @@
+{
+  "name": "mcp-tutorial",
+  "module": "index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test:mcp": "node ./test_cross_mcp.js"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "tsx": "^4.19.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@google-cloud/discoveryengine": "^2.5.3",
+    "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.9.0",
+    "dotenv": "^16.5.0",
+    "quickjs-emscripten": "^0.32.0"
+  }
+}
