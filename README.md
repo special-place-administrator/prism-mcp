@@ -22,7 +22,77 @@ This repository contains two complementary AI systems:
 | **Security & IP Protection** | GCP Application Default Credentials, OAuth 2.0, encrypted credential management, env-based secrets |
 | **Testing & Validation** | Cross-MCP integration tests, Vertex AI verification scripts, schema validation, and benchmarks |
 
+## Quick Start
+
+Get the MCP server running with Claude Desktop in under 2 minutes:
+
+### 1. Clone & Build
+
+```bash
+git clone https://github.com/dcostenco/BCBA.git
+cd BCBA
+npm install
+npm run build
+```
+
+### 2. Add to Claude Desktop
+
+Copy this into your `claude_desktop_config.json` (replace the paths and API keys):
+
+```json
+{
+  "mcpServers": {
+    "athena-public": {
+      "command": "node",
+      "args": ["/absolute/path/to/BCBA/build/server.js"],
+      "env": {
+        "BRAVE_API_KEY": "your-brave-api-key",
+        "GOOGLE_API_KEY": "your-google-gemini-key",
+        "SUPABASE_URL": "https://your-project.supabase.co",
+        "SUPABASE_KEY": "your-supabase-anon-key"
+      }
+    }
+  }
+}
+```
+
+> **Note:** Only `BRAVE_API_KEY` is required. All other keys are optional and enable additional tools (Gemini analysis, session memory, etc.)
+
+### 3. Restart Claude Desktop
+
+That's it — all tools are now available in Claude.
+
+---
+
 ## Architecture
+
+```mermaid
+graph TB
+    Client["AI Client<br/>(Claude Desktop / Cursor / Windsurf)"]
+    MCP["BCBA MCP Server<br/>(TypeScript)"]
+    
+    Client -- "MCP Protocol (stdio)" --> MCP
+    
+    MCP --> Brave["Brave Search API<br/>Web + Local + AI Answers"]
+    MCP --> Gemini["Google Gemini API<br/>Research Paper Analysis"]
+    MCP --> Vertex["Vertex AI Discovery Engine<br/>Enterprise Search"]
+    MCP --> Sandbox["QuickJS Sandbox<br/>Code-Mode Transforms"]
+    MCP --> Supabase["Supabase<br/>Session Memory (Optional)"]
+    
+    Supabase --> Ledger["session_ledger<br/>(append-only log)"]
+    Supabase --> Handoffs["session_handoffs<br/>(project state)"]
+    Supabase --> Context["get_session_context<br/>(progressive loading)"]
+    
+    style Client fill:#4A90D9,color:#fff
+    style MCP fill:#2D3748,color:#fff
+    style Brave fill:#FB542B,color:#fff
+    style Gemini fill:#4285F4,color:#fff
+    style Vertex fill:#34A853,color:#fff
+    style Sandbox fill:#805AD5,color:#fff
+    style Supabase fill:#3ECF8E,color:#fff
+```
+
+### ASCII Architecture (for terminals)
 
 ```
 ┌────────────────────┐        MCP Protocol (stdio)        ┌──────────────────────────┐

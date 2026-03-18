@@ -1,11 +1,44 @@
 {
-  "name": "mcp-tutorial",
+  "name": "bcba-mcp-server",
+  "version": "0.2.0",
+  "description": "Production-ready MCP server with session memory, Vertex AI Discovery Engine, Brave Search, and Google Gemini — progressive context loading for AI agents, sandboxed code transforms, and multi-model orchestration",
   "module": "index.ts",
   "type": "module",
+  "main": "build/server.js",
+  "bin": {
+    "bcba-mcp-server": "./build/server.js"
+  },
   "scripts": {
     "build": "tsc",
+    "start": "node build/server.js",
     "test:mcp": "node ./test_cross_mcp.js"
   },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "ai-agent",
+    "session-memory",
+    "agent-memory",
+    "vertex-ai",
+    "google-gemini",
+    "brave-search",
+    "llm",
+    "claude-desktop",
+    "supabase",
+    "context-loading",
+    "ai-tools",
+    "typescript",
+    "rag",
+    "discovery-engine"
+  ],
+  "homepage": "https://github.com/dcostenco/BCBA",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dcostenco/BCBA.git"
+  },
+  "author": "Dmitri Costenco",
+  "license": "MIT",
   "devDependencies": {
     "@types/bun": "latest",
     "tsx": "^4.19.3"
