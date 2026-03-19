@@ -64,12 +64,22 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   }
 
   // Truncation guard — prevent exceeding API token limits
+  // REVIEWER NOTE (v1.5.0 fix): JavaScript's substring() counts UTF-16
+  // code units. If the cut point lands in the middle of a surrogate pair
+  // (e.g., emoji 🚀 or complex CJK characters), the result contains an
+  // invalid trailing byte (\uFFFD) that some APIs reject with 400.
+  // Fix: truncate at the last word boundary before the limit.
   let inputText = text;
   if (inputText.length > MAX_EMBEDDING_CHARS) {
     console.error(
-      `[embedding] Input text truncated from ${inputText.length} to ${MAX_EMBEDDING_CHARS} chars`
+      `[embedding] Input text truncated from ${inputText.length} to ~${MAX_EMBEDDING_CHARS} chars (word-safe)`
     );
     inputText = inputText.substring(0, MAX_EMBEDDING_CHARS);
+    // Snap back to the last space to avoid splitting a word or surrogate pair
+    const lastSpace = inputText.lastIndexOf(' ');
+    if (lastSpace > 0) {
+      inputText = inputText.substring(0, lastSpace);
+    }
   }
 
   // Skip empty or whitespace-only text

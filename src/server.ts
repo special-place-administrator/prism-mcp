@@ -106,6 +106,7 @@ import {
   // ─── v0.4.0: New tool definitions (Enhancements #2 and #4) ───
   SESSION_COMPACT_LEDGER_TOOL,
   SESSION_SEARCH_MEMORY_TOOL,
+  SESSION_BACKFILL_EMBEDDINGS_TOOL,
   sessionSaveLedgerHandler,
   sessionSaveHandoffHandler,
   sessionLoadContextHandler,
@@ -114,6 +115,7 @@ import {
   // ─── v0.4.0: New tool handlers ───
   compactLedgerHandler,
   sessionSearchMemoryHandler,
+  backfillEmbeddingsHandler,
 } from "./tools/index.js";
 
 // ─── Dynamic Tool Registration ───────────────────────────────────
@@ -141,6 +143,7 @@ const SESSION_MEMORY_TOOLS: Tool[] = [
   KNOWLEDGE_FORGET_TOOL,       // knowledge_forget — prune bad/old memories
   SESSION_COMPACT_LEDGER_TOOL, // session_compact_ledger — auto-compact old ledger entries (v0.4.0)
   SESSION_SEARCH_MEMORY_TOOL,  // session_search_memory — semantic search via embeddings (v0.4.0)
+  SESSION_BACKFILL_EMBEDDINGS_TOOL, // session_backfill_embeddings — repair missing embeddings (v1.5.0)
 ];
 
 // Combine: if session memory is enabled, add those tools too
@@ -560,6 +563,10 @@ export function createServer() {
         case "session_search_memory":
           if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
           return await sessionSearchMemoryHandler(args);
+
+        case "session_backfill_embeddings":
+          if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
+          return await backfillEmbeddingsHandler(args);
 
         default:
           return {

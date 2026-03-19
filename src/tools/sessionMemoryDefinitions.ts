@@ -293,6 +293,42 @@ export const SESSION_SEARCH_MEMORY_TOOL: Tool = {
   },
 };
 
+// ─── v1.5.0: Session Backfill Embeddings (Edge Case B Fix) ────
+// REVIEWER NOTE: If the Gemini API was temporarily down when a ledger
+// entry was saved, the fire-and-forget embedding catch() fires and
+// the row is saved without an embedding. This tool scans for those
+// orphaned rows and batch-generates the missing embeddings.
+
+export const SESSION_BACKFILL_EMBEDDINGS_TOOL: Tool = {
+  name: "session_backfill_embeddings",
+  description:
+    "Repair ledger entries that are missing vector embeddings. " +
+    "This can happen if the Gemini API was temporarily unavailable when the entry was saved.\n\n" +
+    "How it works:\n" +
+    "1. Scans for active ledger entries where embedding IS NULL\n" +
+    "2. Generates embeddings via Gemini text-embedding-004\n" +
+    "3. Patches each row with the generated embedding\n\n" +
+    "Run this periodically or after known API outages to ensure full semantic search coverage.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      project: {
+        type: "string",
+        description: "Optional: repair only a specific project. If omitted, repairs all projects.",
+      },
+      limit: {
+        type: "integer",
+        description: "Maximum entries to repair in one call (default: 20, max: 50). Keeps API costs predictable.",
+        default: 20,
+      },
+      dry_run: {
+        type: "boolean",
+        description: "If true, only count missing embeddings without generating them. Default: false.",
+      },
+    },
+  },
+};
+
 // ─── Type Guards ──────────────────────────────────────────────
 
 export function isKnowledgeForgetArgs(
@@ -376,6 +412,17 @@ export function isSessionSearchMemoryArgs(
     "query" in args &&
     typeof (args as { query: string }).query === "string"
   );
+}
+
+// ─── v1.5.0: Type guard for backfill embeddings ──────────────
+export function isBackfillEmbeddingsArgs(
+  args: unknown
+): args is {
+  project?: string;
+  limit?: number;
+  dry_run?: boolean;
+} {
+  return typeof args === "object" && args !== null;
 }
 
 export function isSessionLoadContextArgs(

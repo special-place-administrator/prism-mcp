@@ -33,6 +33,7 @@ import {
   isKnowledgeSearchArgs,
   isKnowledgeForgetArgs,
   isSessionSearchMemoryArgs,
+  isBackfillEmbeddingsArgs,
 } from "./sessionMemoryDefinitions.js";
 
 // ─── v0.4.0: Import server type for resource notifications ───
@@ -642,4 +643,132 @@ export async function sessionSearchMemoryHandler(args: unknown) {
     }
     throw err;
   }
+}
+
+// ─── Backfill Embeddings Handler ──────────────────────────────
+
+/**
+ * Repair ledger entries with missing embeddings.
+ *
+ * REVIEWER NOTE (v1.5.0 — Edge Case B fix):
+ * If the Gemini API was temporarily down when a ledger entry was saved,
+ * the fire-and-forget catch() fires and the row is saved without an
+ * embedding. This handler scans for those orphaned rows and batch-
+ * generates the missing embeddings.
+ *
+ * Design choices:
+ *   - Default limit of 20 to keep API costs predictable
+ *   - Errors on individual entries are caught and counted, not thrown
+ *   - Dry run mode for safe preview
+ */
+export async function backfillEmbeddingsHandler(args: unknown) {
+  if (!isBackfillEmbeddingsArgs(args)) {
+    throw new Error("Invalid arguments for session_backfill_embeddings");
+  }
+
+  if (!GOOGLE_API_KEY) {
+    return {
+      content: [{
+        type: "text",
+        text: "❌ Cannot backfill: GOOGLE_API_KEY is not configured.",
+      }],
+      isError: true,
+    };
+  }
+
+  const { project, limit = 20, dry_run = false } = args;
+  const safeLimit = Math.min(limit, 50);
+
+  console.error(
+    `[backfill_embeddings] ${dry_run ? "DRY RUN: " : ""}` +
+    `project=${project || "all"}, limit=${safeLimit}`
+  );
+
+  // Find entries missing embeddings
+  const params: Record<string, string> = {
+    "embedding": "is.null",
+    "archived_at": "is.null",
+    user_id: `eq.${PRISM_USER_ID}`,
+    order: "created_at.desc",
+    limit: String(safeLimit),
+    select: "id,summary,decisions,project",
+  };
+  if (project) {
+    params.project = `eq.${project}`;
+  }
+
+  const missing = await supabaseGet("session_ledger", params);
+  const entries = Array.isArray(missing) ? missing : [];
+
+  if (entries.length === 0) {
+    return {
+      content: [{
+        type: "text",
+        text: "✅ No entries with missing embeddings found. All ledger entries have embeddings.",
+      }],
+      isError: false,
+    };
+  }
+
+  // Dry run: just report count
+  if (dry_run) {
+    const projects = [...new Set(entries.map((e: any) => e.project))];
+    return {
+      content: [{
+        type: "text",
+        text: `🔍 Found ${entries.length} entries with missing embeddings:\n` +
+          `Projects: ${projects.join(", ")}\n\n` +
+          `Run without dry_run to generate embeddings.`,
+      }],
+      isError: false,
+    };
+  }
+
+  // Generate embeddings for each entry
+  let repaired = 0;
+  let failed = 0;
+
+  for (const entry of entries) {
+    try {
+      const textToEmbed = [
+        entry.summary || "",
+        ...(entry.decisions || []),
+      ].filter(Boolean).join(" | ");
+
+      if (!textToEmbed.trim()) {
+        console.error(`[backfill] Skipping entry ${entry.id}: no text content`);
+        failed++;
+        continue;
+      }
+
+      const embedding = await generateEmbedding(textToEmbed);
+
+      // Patch the row with the generated embedding
+      await supabasePatch(
+        "session_ledger",
+        { embedding: JSON.stringify(embedding) },
+        { id: `eq.${entry.id}` }
+      );
+
+      repaired++;
+      console.error(`[backfill] ✅ Repaired ${entry.id} (${entry.project})`);
+    } catch (err) {
+      failed++;
+      console.error(`[backfill] ❌ Failed ${entry.id}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  return {
+    content: [{
+      type: "text",
+      text: `🔧 Embedding backfill complete:\n\n` +
+        `• Repaired: ${repaired}\n` +
+        `• Failed: ${failed}\n` +
+        `• Total scanned: ${entries.length}\n\n` +
+        (failed > 0
+          ? `⚠️ ${failed} entries could not be repaired. Check server logs for details.`
+          : `All entries now have embeddings for semantic search.`),
+    }],
+    isError: false,
+  };
 }
