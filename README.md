@@ -1,4 +1,4 @@
-# AI-Driven MCP Server Platform & Vertex AI Integration
+# Prism MCP — AI-Driven Server Platform & Vertex AI Integration
 
 > Production-grade **Model Context Protocol (MCP)** infrastructure and **Google Cloud Vertex AI** applications — combining LLM-powered data retrieval, research analysis, and cross-system API orchestration with enterprise search and discovery capabilities.
 
@@ -69,7 +69,7 @@ That's it — all tools are now available in Claude.
 ```mermaid
 graph TB
     Client["AI Client<br/>(Claude Desktop / Cursor / Windsurf)"]
-    MCP["BCBA MCP Server<br/>(TypeScript)"]
+    MCP["Prism MCP Server<br/>(TypeScript)"]
     
     Client -- "MCP Protocol (stdio)" --> MCP
     
@@ -533,9 +533,9 @@ When `session_load_context` runs at `standard` or `deep` level, it now automatic
 
 At `deep` level, you also get **cross-project knowledge** — related sessions from OTHER projects that share keywords with the current one, enabling knowledge transfer across codebases.
 
-#### Why BCBA's Approach Is Different
+#### Why Prism's Approach Is Different
 
-Most MCP memory servers require **embedding models**, **graph databases**, or **LLM calls at save time**. BCBA takes a fundamentally different approach:
+Most MCP memory servers require **embedding models**, **graph databases**, or **LLM calls at save time**. Prism takes a fundamentally different approach:
 
 > **🧠 Zero-cost intelligence.** Knowledge accumulates automatically from data you're already saving — no new infrastructure, no extra API calls, no perceptible latency.
 
@@ -547,12 +547,12 @@ Most MCP memory servers require **embedding models**, **graph databases**, or **
 | 🏗️ | **Zero new infrastructure** | No Neo4j, no FalkorDB, no pgvector, no embedding API. Uses existing Supabase `TEXT[]` columns + PostgreSQL GIN indexes. |
 | 🧹 | **Built-in memory pruning** | The only MCP memory with a first-class `knowledge_forget` tool — 4 delete modes + dry_run safety. Others require manual DB operations. |
 | 🔥 | **Knowledge cache at boot** | `session_load_context` auto-includes hot keywords and top categories. No separate search call. No other server preloads knowledge. |
-| 🔗 | **Cross-project knowledge transfer** | At `deep` level, surfaces relevant sessions from *other* projects via keyword overlap. Graph servers enforce strict isolation — BCBA treats cross-pollination as a feature. |
+| 🔗 | **Cross-project knowledge transfer** | At `deep` level, surfaces relevant sessions from *other* projects via keyword overlap. Graph servers enforce strict isolation — Prism treats cross-pollination as a feature. |
 
 **Comparison with leading alternatives:**
 
 ```
-                    BCBA        Knowledge Graph    Graphiti/FalkorDB    Hindsight
+                    Prism       Knowledge Graph    Graphiti/FalkorDB    Hindsight
 Write overhead      0.005ms     ~200ms             ~500ms+              ~300ms
 External deps       None        Neo4j/JSON         FalkorDB (Docker)    pgvector + embeddings
 LLM at save time    No          No                 Yes                  Yes
