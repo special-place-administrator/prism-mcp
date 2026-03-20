@@ -20,7 +20,8 @@ import { getStorage } from "../storage/index.js";
 import { toKeywordArray } from "../utils/keywordExtractor.js";
 import { generateEmbedding } from "../utils/embeddingApi.js";
 import { getCurrentGitState, getGitDrift } from "../utils/git.js";
-import { GOOGLE_API_KEY, PRISM_USER_ID } from "../config.js";
+import { GOOGLE_API_KEY, PRISM_USER_ID, PRISM_AUTO_CAPTURE, PRISM_CAPTURE_PORTS } from "../config.js";
+import { captureLocalEnvironment } from "../utils/autoCapture.js";
 import {
   isSessionSaveLedgerArgs,
   isSessionSaveHandoffArgs,
@@ -243,6 +244,39 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
       .catch(err =>
         console.error(`[session_save_handoff] SyncBus broadcast failed (non-fatal): ${err}`)
       );
+  }
+
+  // ─── AUTO-CAPTURE: Snapshot local dev server HTML (v2.1 Step 10) ───
+  // Fire-and-forget — never blocks the handoff response.
+  if (PRISM_AUTO_CAPTURE && (data.status === "created" || data.status === "updated")) {
+    captureLocalEnvironment(project, PRISM_CAPTURE_PORTS).then(async (captureMeta) => {
+      if (captureMeta) {
+        try {
+          const latestCtx = await storage.loadContext(project, "quick", PRISM_USER_ID);
+          if (latestCtx) {
+            const ctx = latestCtx as any;
+            const updatedMeta = { ...(ctx.metadata || {}) };
+            updatedMeta.visual_memory = updatedMeta.visual_memory || [];
+            updatedMeta.visual_memory.push(captureMeta);
+
+            await storage.saveHandoff({
+              project,
+              user_id: PRISM_USER_ID,
+              metadata: updatedMeta,
+              last_summary: ctx.last_summary ?? null,
+              pending_todo: ctx.pending_todo ?? null,
+              active_decisions: ctx.active_decisions ?? null,
+              keywords: ctx.keywords ?? null,
+              key_context: ctx.key_context ?? null,
+              active_branch: ctx.active_branch ?? null,
+            }, newVersion);
+            console.error(`[AutoCapture] HTML snapshot indexed in visual memory for "${project}"`);
+          }
+        } catch (err) {
+          console.error(`[AutoCapture] Metadata patch failed (non-fatal): ${err}`);
+        }
+      }
+    }).catch(err => console.error(`[AutoCapture] Background task failed (non-fatal): ${err}`));
   }
 
   return {

@@ -95,3 +95,17 @@ if (PRISM_USER_ID !== "default") {
   console.error(`Multi-tenant mode: user_id="${PRISM_USER_ID}"`);
 }
 
+// ─── v2.1: Auto-Capture Feature ─────────────────────────────
+// REVIEWER NOTE: Automatically captures HTML snapshots of local dev servers
+// when handoffs are saved. Prevents UI context loss between sessions.
+// Opt-in only — set PRISM_AUTO_CAPTURE=true to enable.
+
+export const PRISM_AUTO_CAPTURE = process.env.PRISM_AUTO_CAPTURE === "true";
+export const PRISM_CAPTURE_PORTS = (process.env.PRISM_CAPTURE_PORTS || "3000,3001,5173,8080")
+  .split(",")
+  .map(p => parseInt(p.trim(), 10))
+  .filter(p => !isNaN(p));
+
+if (PRISM_AUTO_CAPTURE) {
+  console.error(`[AutoCapture] Enabled for ports: ${PRISM_CAPTURE_PORTS.join(", ")}`);
+}

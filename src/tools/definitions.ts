@@ -185,7 +185,9 @@ export const CODE_MODE_TRANSFORM_TOOL: Tool = {
     "and runs a custom JavaScript code string against it in a secure QuickJS sandbox. " +
     "Use this as a second step after calling any tool that returns large payloads — pass the raw output as 'data' and a JS extraction script as 'code'. " +
     "Your script reads the 'DATA' global variable (a string of the tool output) and uses console.log() to print only the fields you need. " +
-    "Typical use cases: extract only issue titles/IDs from GitHub list_issues, pull specific selectors from DOM snapshots, summarize crawl results, extract timestamps from video transcripts.",
+    "NEW in v2.1: Pass 'template' instead of 'code' for instant extraction. " +
+    "Available templates: github_issues, github_prs, jira_tickets, dom_links, dom_headings, api_endpoints, slack_messages, csv_summary. " +
+    "Example: { data: '<raw JSON>', template: 'github_issues' } — no custom code needed.",
   inputSchema: {
     type: "object",
     properties: {
@@ -197,7 +199,13 @@ export const CODE_MODE_TRANSFORM_TOOL: Tool = {
         type: "string",
         description:
           "JavaScript code to execute. The 'DATA' global variable contains the raw data string. Use console.log() to output your extraction. " +
-          "Example: `var d = JSON.parse(DATA); console.log(d.items.map(function(i){return i.title}).join('\\n'));`",
+          "Optional if using a template.",
+      },
+      template: {
+        type: "string",
+        description:
+          "Name of a pre-built extraction template. Use instead of writing custom 'code'. " +
+          "Options: github_issues, github_prs, jira_tickets, dom_links, dom_headings, api_endpoints, slack_messages, csv_summary.",
       },
       language: {
         type: "string",
@@ -209,7 +217,7 @@ export const CODE_MODE_TRANSFORM_TOOL: Tool = {
         description: "Optional. Name of the MCP tool that produced the data (for logging/metrics only).",
       },
     },
-    required: ["data", "code"],
+    required: ["data"],
   },
 };
 
@@ -355,13 +363,11 @@ export function isBraveLocalSearchCodeModeArgs(
 
 export function isCodeModeTransformArgs(
   args: unknown
-): args is { data: string; code: string; language?: string; source_tool?: string } {
+): args is { data: string; code?: string; template?: string; language?: string; source_tool?: string } {
   return (
     typeof args === "object" &&
     args !== null &&
     "data" in args &&
-    typeof (args as { data: string }).data === "string" &&
-    "code" in args &&
-    typeof (args as { code: string }).code === "string"
+    typeof (args as { data: string }).data === "string"
   );
 }

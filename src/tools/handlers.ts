@@ -24,11 +24,11 @@ import { performWebSearch, performWebSearchRaw, performLocalSearch, performLocal
 import { analyzePaperWithGemini } from "../utils/googleAi.js";
 import { isBraveWebSearchArgs, isBraveLocalSearchArgs, isBraveAnswersArgs, isGeminiResearchPaperAnalysisArgs, isBraveWebSearchCodeModeArgs, isBraveLocalSearchCodeModeArgs, isCodeModeTransformArgs } from "./definitions.js";
 import { runInSandbox } from "../utils/executor.js";
+import { CODE_MODE_TEMPLATES, getTemplateNames } from "../templates/codeMode.js";
 
 // ─── Simple Search Handlers ──────────────────────────────────
 
 /** Performs a standard web search and returns formatted text results. */
-// Web search handler
 export async function webSearchHandler(args: unknown) {
   if (!isBraveWebSearchArgs(args)) {
     throw new Error("Invalid arguments for brave_web_search");
@@ -141,8 +141,8 @@ export async function braveLocalSearchCodeModeHandler(args: unknown) {
 // ─── Universal Transform Handler ─────────────────────────────
 
 /**
- * Takes raw output from ANY MCP tool + a JavaScript extraction script.
- * Runs the script in a sandboxed environment and returns the output.
+ * Takes raw output from ANY MCP tool + a JavaScript extraction script OR template.
+ * If `template` is provided, substitutes the pre-built script before running sandbox.
  * Not tied to Brave Search — works with any text/JSON data.
  */
 export async function codeModeTransformHandler(args: unknown) {
@@ -150,7 +150,7 @@ export async function codeModeTransformHandler(args: unknown) {
     throw new Error("Invalid arguments for code_mode_transform");
   }
 
-  const { data, code, language = "javascript", source_tool = "unknown" } = args;
+  const { data, language = "javascript", source_tool = "unknown" } = args;
 
   if (language.toLowerCase() !== "javascript") {
     return {
@@ -159,10 +159,33 @@ export async function codeModeTransformHandler(args: unknown) {
     };
   }
 
-  const beforeSizeKB = (Buffer.byteLength(data, "utf8") / 1024).toFixed(1);
-  console.error(`[code_mode_transform] source=${source_tool}, input=${beforeSizeKB}KB`);
+  // ─── Resolve script: template takes priority over custom code ───
+  let scriptToRun = args.code;
+  let templateUsed = "custom";
 
-  const { stdout, error, executionTimeMs } = await runInSandbox(data, code);
+  if (args.template) {
+    const tmpl = CODE_MODE_TEMPLATES[args.template];
+    if (!tmpl) {
+      return {
+        content: [{ type: "text", text: `Unknown template '${args.template}'. Available templates: ${getTemplateNames().join(", ")}` }],
+        isError: true,
+      };
+    }
+    scriptToRun = tmpl;
+    templateUsed = args.template;
+  }
+
+  if (!scriptToRun) {
+    return {
+      content: [{ type: "text", text: `You must provide either 'code' or a valid 'template'. Available templates: ${getTemplateNames().join(", ")}` }],
+      isError: true,
+    };
+  }
+
+  const beforeSizeKB = (Buffer.byteLength(data, "utf8") / 1024).toFixed(1);
+  console.error(`[code_mode_transform] source=${source_tool}, template=${templateUsed}, input=${beforeSizeKB}KB`);
+
+  const { stdout, error, executionTimeMs } = await runInSandbox(data, scriptToRun);
 
   if (error) {
     return {
@@ -175,7 +198,7 @@ export async function codeModeTransformHandler(args: unknown) {
   const afterSizeKB = (Buffer.byteLength(finalOutput, "utf8") / 1024).toFixed(1);
   const reductionPct = (100 - (Number(afterSizeKB) / Number(beforeSizeKB)) * 100).toFixed(1);
 
-  const header = `[code-mode-transform (${source_tool}): ${beforeSizeKB}KB -> ${afterSizeKB}KB (${reductionPct}% reduction) in ${executionTimeMs}ms]\n\n`;
+  const header = `[code-mode-transform (${source_tool}${templateUsed !== "custom" ? `, template: ${templateUsed}` : ""}): ${beforeSizeKB}KB -> ${afterSizeKB}KB (${reductionPct}% reduction) in ${executionTimeMs}ms]\n\n`;
 
   return {
     content: [{ type: "text", text: header + finalOutput }],
