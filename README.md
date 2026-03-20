@@ -65,8 +65,8 @@ Get the MCP server running with Claude Desktop in under 2 minutes:
 ### 1. Clone & Build
 
 ```bash
-git clone https://github.com/dcostenco/BCBA.git
-cd BCBA
+git clone https://github.com/dcostenco/prism-mcp.git
+cd prism-mcp
 npm install
 npm run build
 ```
@@ -98,6 +98,18 @@ Copy this into your `claude_desktop_config.json` (replace the paths and API keys
 ### 3. Restart Claude Desktop
 
 That's it — all tools are now available in Claude.
+
+### Alternative: Local PostgreSQL (Docker)
+
+If you prefer local PostgreSQL instead of Cloud Supabase:
+
+```bash
+docker compose up -d          # Start PostgreSQL + PostgREST
+# Run all migrations:
+cat supabase/migrations/*.sql | docker compose exec -T db psql -U prism -d prism_mcp
+```
+
+Then set `SUPABASE_URL=http://localhost:3000` in your MCP config.
 
 ---
 
@@ -399,8 +411,8 @@ A powerful **post-processing layer** designed to normalize and extract specific 
 
 ### Installation
 ```bash
-git clone https://github.com/dcostenco/BCBA.git
-cd BCBA
+git clone https://github.com/dcostenco/prism-mcp.git
+cd prism-mcp
 npm install
 npm run build
 ```
