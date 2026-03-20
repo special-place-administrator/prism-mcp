@@ -28,6 +28,8 @@ import {
   isKnowledgeForgetArgs,
   isSessionSearchMemoryArgs,
   isBackfillEmbeddingsArgs,
+  isMemoryHistoryArgs,
+  isMemoryCheckoutArgs,
 } from "./sessionMemoryDefinitions.js";
 
 // ─── v0.4.0: Import server type for resource notifications ───
@@ -190,6 +192,26 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
 
   // ─── Success: handoff created or updated ───
   const newVersion = data.version;
+
+  // ─── TIME MACHINE: Auto-snapshot for time travel (fire-and-forget) ───
+  // Every successful save creates a snapshot so the user can revert later.
+  // We don't await — this should never block the success response.
+  if (data.status === "created" || data.status === "updated") {
+    const snapshotEntry = {
+      project,
+      user_id: PRISM_USER_ID,
+      last_summary: last_summary ?? null,
+      pending_todo: open_todos ?? null,
+      active_decisions: null,
+      keywords: keywords ?? null,
+      key_context: key_context ?? null,
+      active_branch: active_branch ?? null,
+      version: newVersion,
+    };
+    storage.saveHistorySnapshot(snapshotEntry).catch(err =>
+      console.error(`[session_save_handoff] History snapshot failed (non-fatal): ${err}`)
+    );
+  }
 
   // ─── Trigger resource subscription notification ───
   if (server && (data.status === "created" || data.status === "updated")) {
@@ -629,6 +651,144 @@ export async function backfillEmbeddingsHandler(args: unknown) {
         (failed > 0
           ? `⚠️ ${failed} entries could not be repaired. Check server logs for details.`
           : `All entries now have embeddings for semantic search.`),
+    }],
+    isError: false,
+  };
+}
+
+// ─── Memory History Handler (v2.0 — Time Travel) ─────────────
+
+/**
+ * Lists the version timeline for a project.
+ * The agent should call this BEFORE memory_checkout to see available versions.
+ */
+export async function memoryHistoryHandler(args: unknown) {
+  if (!isMemoryHistoryArgs(args)) {
+    throw new Error("Invalid arguments for memory_history");
+  }
+
+  const { project, limit = 10 } = args;
+  const storage = await getStorage();
+
+  console.error(`[memory_history] Fetching history for project="${project}" (limit=${limit})`);
+
+  const history = await storage.getHistory(project, PRISM_USER_ID, Math.min(limit, 50));
+
+  if (history.length === 0) {
+    return {
+      content: [{
+        type: "text",
+        text: `No memory history found for project "${project}".\n\n` +
+          `History is automatically created each time you save a handoff.\n` +
+          `Use session_save_handoff first, then check history again.`,
+      }],
+      isError: false,
+    };
+  }
+
+  // Format timeline for LLM readability
+  const timeline = history.map(h => {
+    const summary = h.snapshot.last_summary || "(no summary)";
+    const todos = h.snapshot.pending_todo?.length || 0;
+    const branch = h.branch !== "main" ? ` [branch: ${h.branch}]` : "";
+    return `  v${h.version} [${h.created_at}]${branch}\n    Summary: ${summary}\n    TODOs: ${todos} items`;
+  }).join("\n\n");
+
+  return {
+    content: [{
+      type: "text",
+      text: `🕰️ Memory History for "${project}" (${history.length} snapshots):\n\n${timeline}\n\n` +
+        `To revert to any version, use: memory_checkout with project="${project}" and target_version=<version number>.`,
+    }],
+    isError: false,
+  };
+}
+
+// ─── Memory Checkout Handler (v2.0 — Time Travel) ────────────
+
+/**
+ * Reverts a project's memory to a historical version — like Git revert.
+ * The version number moves FORWARD (no data is lost), and the revert itself
+ * is recorded in history so you can undo an undo.
+ */
+export async function memoryCheckoutHandler(args: unknown) {
+  if (!isMemoryCheckoutArgs(args)) {
+    throw new Error("Invalid arguments for memory_checkout");
+  }
+
+  const { project, target_version } = args;
+  const storage = await getStorage();
+
+  console.error(
+    `[memory_checkout] Reverting project="${project}" to version ${target_version}`
+  );
+
+  // 1. Find the target snapshot
+  const history = await storage.getHistory(project, PRISM_USER_ID, 50);
+  const targetState = history.find(h => h.version === target_version);
+
+  if (!targetState) {
+    const available = history.map(h => `v${h.version}`).join(", ") || "none";
+    return {
+      content: [{
+        type: "text",
+        text: `❌ Version ${target_version} not found in history for "${project}".\n\n` +
+          `Available versions: ${available}\n\n` +
+          `Use memory_history to see the full timeline.`,
+      }],
+      isError: true,
+    };
+  }
+
+  // 2. Get current state for OCC
+  const currentContext = await storage.loadContext(project, "quick", PRISM_USER_ID);
+  const currentVersion = currentContext ? (currentContext as Record<string, unknown>).version as number : null;
+
+  // 3. Build the revert handoff — copy the historical snapshot but mark it as a revert
+  const revertHandoff = {
+    ...targetState.snapshot,
+    project,
+    user_id: PRISM_USER_ID,
+    last_summary: `[REVERTED TO v${target_version}] ${targetState.snapshot.last_summary || ""}`,
+  };
+
+  // 4. Save with OCC — pass current version to prevent race conditions
+  const result = await storage.saveHandoff(revertHandoff, currentVersion);
+
+  if (result.status === "conflict") {
+    return {
+      content: [{
+        type: "text",
+        text: `⚠️ Version conflict during checkout! Another session updated the project.\n\n` +
+          `Current version: ${result.current_version}\n` +
+          `Call session_load_context to see the latest state, then try again.`,
+      }],
+      isError: true,
+    };
+  }
+
+  // 5. Save the revert itself to history (so you can undo the undo)
+  const revertSnapshotEntry = {
+    ...revertHandoff,
+    version: result.version,
+  };
+  await storage.saveHistorySnapshot(revertSnapshotEntry).catch(err =>
+    console.error(`[memory_checkout] History snapshot of revert failed (non-fatal): ${err}`)
+  );
+
+  const newVersion = result.version;
+
+  return {
+    content: [{
+      type: "text",
+      text: `🕰️ Time travel successful!\n\n` +
+        `• Project: "${project}"\n` +
+        `• Reverted from: v${currentVersion || "?"} → restored v${target_version}\n` +
+        `• New current version: v${newVersion}\n` +
+        `• Summary: ${targetState.snapshot.last_summary || "(no summary)"}\n\n` +
+        `The project's memory has been restored to the state from ${targetState.created_at}.\n` +
+        `This revert is also saved in history, so you can undo it with another memory_checkout.\n\n` +
+        `🔑 Remember: pass expected_version: ${newVersion} on your next save.`,
     }],
     isError: false,
   };

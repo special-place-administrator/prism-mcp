@@ -111,6 +111,21 @@ export interface SemanticSearchResult {
   files_changed?: string[];
 }
 
+/**
+ * A point-in-time snapshot of a handoff state (v2.0 — Time Travel).
+ * Each successful saveHandoff creates one of these automatically.
+ * Used by memory_history / memory_checkout to browse and restore past states.
+ */
+export interface HistorySnapshot {
+  id: string;
+  project: string;
+  user_id: string;
+  version: number;
+  snapshot: HandoffEntry;
+  branch: string;
+  created_at: string;
+}
+
 // ─── Storage Backend Interface ────────────────────────────────
 
 /**
@@ -212,17 +227,17 @@ export interface StorageBackend {
     userId: string
   ): Promise<Array<{ project: string; total_entries: number; to_compact: number }>>;
 
-  // ─── v2.0 Time Travel (Stub for Step 4) ────────────────────
+  // ─── v2.0 Time Travel ──────────────────────────────────────
 
   /**
    * Save a snapshot of the current handoff state for time travel.
-   * Step 1: throws "Not implemented" — will be completed in Step 4.
+   * Called automatically after every successful saveHandoff.
    */
-  saveHistorySnapshot?(handoff: HandoffEntry, branch?: string): Promise<void>;
+  saveHistorySnapshot(handoff: HandoffEntry, branch?: string): Promise<void>;
 
   /**
-   * List version history for a project.
-   * Step 1: throws "Not implemented" — will be completed in Step 4.
+   * List version history for a project (newest first).
+   * Used by memory_history tool.
    */
-  getHistory?(project: string, limit?: number): Promise<unknown[]>;
+  getHistory(project: string, userId: string, limit?: number): Promise<HistorySnapshot[]>;
 }

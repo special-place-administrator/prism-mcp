@@ -435,3 +435,77 @@ export function isSessionLoadContextArgs(
     typeof (args as { project: string }).project === "string"
   );
 }
+
+// ─── v2.0: Time Travel Tool Definitions ──────────────────────
+
+export const MEMORY_HISTORY_TOOL: Tool = {
+  name: "memory_history",
+  description:
+    "View the timeline of past memory states for this project. " +
+    "Use this BEFORE memory_checkout to find the correct version to revert to. " +
+    "Shows version numbers, timestamps, and summaries of each saved state.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      project: {
+        type: "string",
+        description: "Project identifier to view history for.",
+      },
+      limit: {
+        type: "number",
+        description: "Maximum number of history entries to return (default: 10, max: 50).",
+        default: 10,
+      },
+    },
+    required: ["project"],
+  },
+};
+
+export const MEMORY_CHECKOUT_TOOL: Tool = {
+  name: "memory_checkout",
+  description:
+    "Time travel! Restores the project's memory to a specific past version. " +
+    "This overwrites the current handoff state with the historical snapshot, " +
+    "like a Git revert — the version number moves forward (no data is lost). " +
+    "Call memory_history first to find the correct target_version.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      project: {
+        type: "string",
+        description: "Project identifier to revert.",
+      },
+      target_version: {
+        type: "number",
+        description: "The version number to restore from history (get this from memory_history).",
+      },
+    },
+    required: ["project", "target_version"],
+  },
+};
+
+// ─── v2.0: Time Travel Type Guards ───────────────────────────
+
+export function isMemoryHistoryArgs(
+  args: unknown
+): args is { project: string; limit?: number } {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    "project" in args &&
+    typeof (args as { project: string }).project === "string"
+  );
+}
+
+export function isMemoryCheckoutArgs(
+  args: unknown
+): args is { project: string; target_version: number } {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    "project" in args &&
+    typeof (args as { project: string }).project === "string" &&
+    "target_version" in args &&
+    typeof (args as { target_version: number }).target_version === "number"
+  );
+}

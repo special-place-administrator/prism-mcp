@@ -29,6 +29,7 @@ import type {
   ContextResult,
   KnowledgeSearchResult,
   SemanticSearchResult,
+  HistorySnapshot,
 } from "./interface.js";
 
 export class SupabaseStorage implements StorageBackend {
@@ -215,5 +216,31 @@ export class SupabaseStorage implements StorageBackend {
     });
 
     return Array.isArray(result) ? result : [];
+  }
+
+  // ─── Time Travel ──────────────────────────────────────────
+
+  async saveHistorySnapshot(handoff: HandoffEntry, branch: string = "main"): Promise<void> {
+    await supabasePost("session_handoffs_history", {
+      project: handoff.project,
+      user_id: handoff.user_id,
+      version: handoff.version ?? 1,
+      snapshot: handoff,
+      branch,
+    });
+  }
+
+  async getHistory(
+    project: string,
+    userId: string,
+    limit: number = 10
+  ): Promise<HistorySnapshot[]> {
+    const data = await supabaseGet("session_handoffs_history", {
+      project: `eq.${project}`,
+      user_id: `eq.${userId}`,
+      order: "version.desc",
+      limit: String(limit),
+    });
+    return (Array.isArray(data) ? data : []) as HistorySnapshot[];
   }
 }

@@ -30,6 +30,7 @@ import type {
   ContextResult,
   KnowledgeSearchResult,
   SemanticSearchResult,
+  HistorySnapshot,
 } from "./interface.js";
 
 export class SqliteStorage implements StorageBackend {
@@ -154,6 +155,24 @@ export class SqliteStorage implements StorageBackend {
         INSERT INTO ledger_fts(rowid, project, summary, decisions, keywords)
         VALUES (new.rowid, new.project, new.summary, new.decisions, new.keywords);
       END;
+
+      -- ─── Handoff History (Time Travel snapshots) ───
+      -- Every successful saveHandoff auto-creates a snapshot here.
+      -- memory_history reads them; memory_checkout restores from them.
+      CREATE TABLE IF NOT EXISTS session_handoffs_history (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        project TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT 'default',
+        version INTEGER NOT NULL,
+        snapshot TEXT NOT NULL,
+        branch TEXT NOT NULL DEFAULT 'main',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_history_project
+        ON session_handoffs_history(project, user_id);
+      CREATE INDEX IF NOT EXISTS idx_history_version
+        ON session_handoffs_history(project, version);
     `);
   }
 
@@ -757,6 +776,57 @@ export class SqliteStorage implements StorageBackend {
       project: r.project as string,
       total_entries: r.total_entries as number,
       to_compact: (r.total_entries as number) - keepRecent,
+    }));
+  }
+
+  // ─── Time Travel ──────────────────────────────────────────
+
+  async saveHistorySnapshot(handoff: HandoffEntry, branch: string = "main"): Promise<void> {
+    const id = randomUUID();
+    const snapshotStr = JSON.stringify(handoff);
+
+    await this.db.execute({
+      sql: `INSERT INTO session_handoffs_history
+            (id, project, user_id, version, snapshot, branch)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [
+        id,
+        handoff.project,
+        handoff.user_id,
+        handoff.version ?? 1,
+        snapshotStr,
+        branch,
+      ],
+    });
+
+    console.error(
+      `[SqliteStorage] History snapshot saved: project=${handoff.project}, ` +
+      `version=${handoff.version ?? 1}, branch=${branch}`
+    );
+  }
+
+  async getHistory(
+    project: string,
+    userId: string,
+    limit: number = 10
+  ): Promise<HistorySnapshot[]> {
+    const result = await this.db.execute({
+      sql: `SELECT id, project, user_id, version, snapshot, branch, created_at
+            FROM session_handoffs_history
+            WHERE project = ? AND user_id = ?
+            ORDER BY version DESC
+            LIMIT ?`,
+      args: [project, userId, limit],
+    });
+
+    return result.rows.map(row => ({
+      id: row.id as string,
+      project: row.project as string,
+      user_id: row.user_id as string,
+      version: row.version as number,
+      snapshot: JSON.parse(row.snapshot as string) as HandoffEntry,
+      branch: row.branch as string,
+      created_at: row.created_at as string,
     }));
   }
 }
