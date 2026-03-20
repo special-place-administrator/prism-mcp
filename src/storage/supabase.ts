@@ -243,4 +243,16 @@ export class SupabaseStorage implements StorageBackend {
     });
     return (Array.isArray(data) ? data : []) as HistorySnapshot[];
   }
+
+  // ─── v2.0 Dashboard ─────────────────────────────────────────
+
+  async listProjects(): Promise<string[]> {
+    const data = await supabaseGet("session_handoffs", {
+      select: "project",
+      order: "project.asc",
+    });
+    const rows = Array.isArray(data) ? data : [];
+    // Deduplicate on the client side since Supabase doesn't support DISTINCT via REST
+    return [...new Set(rows.map((r: any) => r.project as string))];
+  }
 }

@@ -71,6 +71,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { SERVER_CONFIG, SESSION_MEMORY_ENABLED, PRISM_USER_ID } from "./config.js";
 import { getSyncBus } from "./sync/factory.js";
 import type { SyncBus, SyncEvent } from "./sync/index.js";
+import { startDashboardServer } from "./dashboard/server.js";
 
 // ─── v0.4.0: Supabase API imports for Prompts/Resources handlers ───
 // REVIEWER NOTE: The prompt and resource handlers need direct access
@@ -668,6 +669,11 @@ export async function startServer() {
       console.error(`[Telepathy] SyncBus init failed (non-fatal): ${err}`);
     }
   }
+
+  // ─── v2.0 Step 8: Mind Palace Dashboard ───
+  startDashboardServer().catch(err => {
+    console.error(`[Dashboard] Mind Palace startup failed (non-fatal): ${err}`);
+  });
 
   console.error(`Prism MCP Server v${SERVER_CONFIG.version} running on stdio`);
 

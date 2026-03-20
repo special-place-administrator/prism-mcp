@@ -833,4 +833,13 @@ export class SqliteStorage implements StorageBackend {
       created_at: row.created_at as string,
     }));
   }
+
+  // ─── v2.0 Dashboard ─────────────────────────────────────────
+
+  async listProjects(): Promise<string[]> {
+    const result = await this.db.execute(
+      "SELECT DISTINCT project FROM session_handoffs ORDER BY project ASC"
+    );
+    return result.rows.map(row => row.project as string);
+  }
 }

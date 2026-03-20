@@ -240,4 +240,12 @@ export interface StorageBackend {
    * Used by memory_history tool.
    */
   getHistory(project: string, userId: string, limit?: number): Promise<HistorySnapshot[]>;
+
+  // ─── v2.0 Dashboard ─────────────────────────────────────────
+
+  /**
+   * List all distinct projects that have handoff data.
+   * Used by the Mind Palace Dashboard for project discovery.
+   */
+  listProjects(): Promise<string[]>;
 }
