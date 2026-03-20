@@ -9,6 +9,9 @@
   "bin": {
     "prism-mcp-server": "./dist/server.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
