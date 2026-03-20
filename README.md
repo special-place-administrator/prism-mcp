@@ -14,7 +14,7 @@
 
 ---
 
-## What's New in v1.5.0
+## What's New in v1.5
 
 | Feature | Description |
 |---|---|
@@ -601,26 +601,7 @@ npx ts-node vertex-ai/test_pipeline_benchmark.ts
 
 ### Claude Desktop Integration
 
-Add the server to your Claude Desktop MCP config (credentials are passed via environment variables):
-
-```json
-{
-  "mcpServers": {
-    "prism-mcp": {
-      "command": "node",
-      "args": ["<path>/build/index.js"],
-      "env": {
-        "BRAVE_API_KEY": "${BRAVE_API_KEY}",
-        "GEMINI_API_KEY": "${GEMINI_API_KEY}",
-        "DISCOVERY_ENGINE_PROJECT_ID": "${DISCOVERY_ENGINE_PROJECT_ID}",
-        "DISCOVERY_ENGINE_ENGINE_ID": "${DISCOVERY_ENGINE_ENGINE_ID}",
-        "SUPABASE_URL": "${SUPABASE_URL}",
-        "SUPABASE_KEY": "${SUPABASE_KEY}"
-      }
-    }
-  }
-}
-```
+See [Quick Start](#quick-start) and [Integration Examples](#integration-examples) above for copy-paste configs.
 
 > **Note:** All 12 tools are available when both Brave and Supabase keys are configured. `SUPABASE_URL` and `SUPABASE_KEY` enable the 5 session memory + knowledge tools. Without them, the server runs with 7 search & analysis tools.
 
@@ -641,7 +622,7 @@ Add the server to your Claude Desktop MCP config (credentials are passed via env
 
 Prism's core differentiator: persistent session memory and brain-inspired knowledge accumulation for AI agents — save work logs, hand off state between sessions, progressively load context on boot, search accumulated knowledge, and prune bad memories. This is what makes Prism more than just another search server.
 
-### Knowledge Accumulation System *(v0.3.0)*
+### Knowledge Accumulation System
 
 The brain-inspired knowledge layer that turns session data into searchable, manageable institutional memory.
 
