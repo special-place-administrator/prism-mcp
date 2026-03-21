@@ -14,7 +14,7 @@
 
 ---
 
-## What's New in v2.3.11 — Stability & Fixes 🛠️
+## What's New in v2.3.12 — Stability & Fixes 🛠️
 
 | Feature | Description |
 |---|---|
