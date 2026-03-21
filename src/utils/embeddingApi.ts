@@ -33,7 +33,7 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, TaskType } from "@google/generative-ai";
 import { GOOGLE_API_KEY } from "../config.js";
 
 // ─── Constants ────────────────────────────────────────────────
@@ -100,6 +100,13 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   console.error(`[embedding] Generating 768-dim embedding for ${inputText.length} chars`);
 
-  const result = await model.embedContent(inputText);
+  const result = await model.embedContent({
+    content: {
+      role: "user",
+      parts: [{ text: inputText }],
+    },
+    taskType: TaskType.SEMANTIC_SIMILARITY,
+    outputDimensionality: 768,
+  } as any);
   return result.embedding.values;
 }
