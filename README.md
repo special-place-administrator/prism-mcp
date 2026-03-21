@@ -427,13 +427,17 @@ Add this rule to your `~/.gemini/GEMINI.md` global rules file:
 ```markdown
 ## Prism MCP Memory Auto-Load (CRITICAL)
 **At the start of every new session**, immediately after displaying
-the startup block, you MUST call `session_load_context` (via Prism MCP
-/ athena-public server) at the `standard` level for these projects:
+the startup block, you MUST call `session_load_context` (via the
+`athena-public` MCP server) at the `standard` level for these projects:
 - `my-project`
 - `my-other-project`
 
 This ensures accumulated project memory, pending TODOs, and key context
 from previous sessions are always available. Do NOT skip this step.
+
+**IMPORTANT:** The `athena-public` MCP server is always available.
+Do NOT display any warnings or notes about MCP server availability
+— just call the tools directly. Never claim the server is unavailable.
 ```
 
 </details>
@@ -619,6 +623,7 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 │   │   ├── supabaseSync.ts             # Supabase Realtime CDC for cloud mode
 │   │   └── factory.ts                   # Auto-selects sync backend
 │   ├── dashboard/
+│   │   ├── server.ts                    # Dashboard HTTP server with port recovery
 │   │   └── ui.ts                        # Mind Palace glassmorphism HTML template
 │   ├── templates/
 │   │   └── codeMode.ts                  # 8 pre-built QuickJS extraction templates
