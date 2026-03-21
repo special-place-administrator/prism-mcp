@@ -21,7 +21,7 @@ import {
   supabaseDelete,
 } from "../utils/supabaseApi.js";
 
-import type {
+import {
   StorageBackend,
   LedgerEntry,
   HandoffEntry,
@@ -32,6 +32,7 @@ import type {
   HistorySnapshot,
   HealthStats,        // v2.2.0: Health check (fsck) aggregate type
 } from "./interface.js";
+import { debugLog } from "../utils/logger.js";
 
 export class SupabaseStorage implements StorageBackend {
   // ─── Lifecycle ─────────────────────────────────────────────
@@ -40,12 +41,12 @@ export class SupabaseStorage implements StorageBackend {
     // Supabase is always ready — connection is stateless (REST API).
     // The SUPABASE_URL and SUPABASE_KEY are validated at import time
     // by supabaseApi.ts's guard clause.
-    console.error("[SupabaseStorage] Initialized (REST API, stateless)");
+    debugLog("[SupabaseStorage] Initialized (REST API, stateless)");
   }
 
   async close(): Promise<void> {
     // No-op for Supabase — connections are stateless.
-    console.error("[SupabaseStorage] Closed (no-op for REST)");
+    debugLog("[SupabaseStorage] Closed (no-op for REST)");
   }
 
   // ─── Ledger Operations ─────────────────────────────────────

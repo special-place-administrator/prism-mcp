@@ -25,6 +25,7 @@ import { analyzePaperWithGemini } from "../utils/googleAi.js";
 import { isBraveWebSearchArgs, isBraveLocalSearchArgs, isBraveAnswersArgs, isGeminiResearchPaperAnalysisArgs, isBraveWebSearchCodeModeArgs, isBraveLocalSearchCodeModeArgs, isCodeModeTransformArgs } from "./definitions.js";
 import { runInSandbox } from "../utils/executor.js";
 import { CODE_MODE_TEMPLATES, getTemplateNames } from "../templates/codeMode.js";
+import { debugLog } from "../utils/logger.js";
 
 // ─── Simple Search Handlers ──────────────────────────────────
 
@@ -66,12 +67,12 @@ export async function braveWebSearchCodeModeHandler(args: unknown) {
   }
 
   // 1. Fetch raw data
-  console.error(`Fetching web search for code mode: "${query}"`);
+  debugLog(`Fetching web search for code mode: "${query}"`);
   const rawDataStr = await performWebSearchRaw(query, count, offset);
   const beforeSizeKB = (Buffer.byteLength(rawDataStr, 'utf8') / 1024).toFixed(1);
 
   // 2. Run code mode sandbox
-  console.error(`Executing code mode sandbox...`);
+  debugLog(`Executing code mode sandbox...`);
   const { stdout, error, executionTimeMs } = await runInSandbox(rawDataStr, code);
 
   if (error) {
@@ -112,11 +113,11 @@ export async function braveLocalSearchCodeModeHandler(args: unknown) {
     };
   }
 
-  console.error(`Fetching local search for code mode: "${query}"`);
+  debugLog(`Fetching local search for code mode: "${query}"`);
   const rawDataStr = await performLocalSearchRaw(query, count);
   const beforeSizeKB = (Buffer.byteLength(rawDataStr, "utf8") / 1024).toFixed(1);
 
-  console.error("Executing local search code mode sandbox...");
+  debugLog("Executing local search code mode sandbox...");
   const { stdout, error, executionTimeMs } = await runInSandbox(rawDataStr, code);
 
   if (error) {
@@ -183,7 +184,7 @@ export async function codeModeTransformHandler(args: unknown) {
   }
 
   const beforeSizeKB = (Buffer.byteLength(data, "utf8") / 1024).toFixed(1);
-  console.error(`[code_mode_transform] source=${source_tool}, template=${templateUsed}, input=${beforeSizeKB}KB`);
+  debugLog(`[code_mode_transform] source=${source_tool}, template=${templateUsed}, input=${beforeSizeKB}KB`);
 
   const { stdout, error, executionTimeMs } = await runInSandbox(data, scriptToRun);
 
@@ -264,7 +265,7 @@ export async function researchPaperAnalysisHandler(args: unknown) {
   }
 
   try {
-    console.error(`Analyzing research paper with Gemini (${analysisType} analysis)...`);
+    debugLog(`Analyzing research paper with Gemini (${analysisType} analysis)...`);
     const analysis = await analyzePaperWithGemini(paperContent, analysisType, additionalContext);
 
     return {

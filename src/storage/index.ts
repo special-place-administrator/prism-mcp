@@ -11,6 +11,7 @@
  */
 
 import { PRISM_STORAGE } from "../config.js";
+import { debugLog } from "../utils/logger.js";
 import { SupabaseStorage } from "./supabase.js";
 import type { StorageBackend } from "./interface.js";
 
@@ -28,7 +29,7 @@ let storageInstance: StorageBackend | null = null;
 export async function getStorage(): Promise<StorageBackend> {
   if (storageInstance) return storageInstance;
 
-  console.error(`[Prism Storage] Initializing backend: ${PRISM_STORAGE}`);
+  debugLog(`[Prism Storage] Initializing backend: ${PRISM_STORAGE}`);
 
   if (PRISM_STORAGE === "local") {
     const { SqliteStorage } = await import("./sqlite.js");

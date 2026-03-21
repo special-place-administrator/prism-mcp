@@ -16,6 +16,7 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 
+import { debugLog } from "../utils/logger.js";
 import { getStorage } from "../storage/index.js";
 import { toKeywordArray } from "../utils/keywordExtractor.js";
 import { generateEmbedding } from "../utils/embeddingApi.js";
@@ -57,12 +58,12 @@ export async function sessionSaveLedgerHandler(args: unknown) {
   const { project, conversation_id, summary, todos, files_changed, decisions } = args;
   const storage = await getStorage();
 
-  console.error(`[session_save_ledger] Saving ledger entry for project="${project}"`);
+  debugLog(`[session_save_ledger] Saving ledger entry for project="${project}"`);
 
   // Auto-extract keywords from summary + decisions for knowledge accumulation
   const combinedText = [summary, ...(decisions || [])].join(" ");
   const keywords = toKeywordArray(combinedText);
-  console.error(`[session_save_ledger] Extracted ${keywords.length} keywords: ${keywords.slice(0, 5).join(", ")}...`);
+  debugLog(`[session_save_ledger] Extracted ${keywords.length} keywords: ${keywords.slice(0, 5).join(", ")}...`);
 
   // Save via storage backend
   const result = await storage.saveLedger({
@@ -88,7 +89,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
           await storage.patchLedger(entryId, {
             embedding: JSON.stringify(embedding),
           });
-          console.error(`[session_save_ledger] Embedding saved for entry ${entryId}`);
+          debugLog(`[session_save_ledger] Embedding saved for entry ${entryId}`);
         })
         .catch((err) => {
           console.error(`[session_save_ledger] Embedding generation failed (non-fatal): ${err.message}`);
@@ -132,7 +133,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
 
   const storage = await getStorage();
 
-  console.error(
+  debugLog(
     `[session_save_handoff] Saving handoff for project="${project}" ` +
     `(expected_version=${expected_version ?? "none"})`
   );
@@ -141,7 +142,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
   const combinedText = [last_summary || "", key_context || ""].filter(Boolean).join(" ");
   const keywords = combinedText ? toKeywordArray(combinedText) : undefined;
   if (keywords) {
-    console.error(`[session_save_handoff] Extracted ${keywords.length} keywords: ${keywords.slice(0, 5).join(", ")}...`);
+    debugLog(`[session_save_handoff] Extracted ${keywords.length} keywords: ${keywords.slice(0, 5).join(", ")}...`);
   }
 
   // Auto-capture Git state for Reality Drift Detection (v2.0 Step 5)
@@ -150,7 +151,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
   if (gitState.isRepo) {
     metadata.git_branch = gitState.branch;
     metadata.last_commit_sha = gitState.commitSha;
-    console.error(
+    debugLog(
       `[session_save_handoff] Git state captured: branch=${gitState.branch}, sha=${gitState.commitSha?.substring(0, 8)}`
     );
   }
@@ -173,7 +174,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
 
   // ─── Handle version conflict ───
   if (data.status === "conflict") {
-    console.error(
+    debugLog(
       `[session_save_handoff] VERSION CONFLICT for "${project}": ` +
       `expected=${expected_version}, current=${data.current_version}`
     );
@@ -271,7 +272,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
               key_context: ctx.key_context ?? null,
               active_branch: ctx.active_branch ?? null,
             }, newVersion);
-            console.error(`[AutoCapture] HTML snapshot indexed in visual memory for "${project}"`);
+            debugLog(`[AutoCapture] HTML snapshot indexed in visual memory for "${project}"`);
           }
         } catch (err) {
           console.error(`[AutoCapture] Metadata patch failed (non-fatal): ${err}`);
@@ -303,7 +304,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
 
         // Step 2: Skip merge if old context is empty (nothing to merge with)
         if (!oldKeyContext || oldKeyContext.trim().length === 0) {
-          console.error("[FactMerger] No old context to merge — skipping");
+          debugLog("[FactMerger] No old context to merge — skipping");
           return;  // first handoff for this project, no merge needed
         }
 
@@ -312,7 +313,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
 
         // Step 4: Skip patch if merged result is same as current key_context
         if (mergedContext === key_context) {
-          console.error("[FactMerger] No changes after merge — skipping patch");
+          debugLog("[FactMerger] No changes after merge — skipping patch");
           return;  // Gemini determined no contradictions existed
         }
 
@@ -331,13 +332,13 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
           metadata: {},                            // no metadata changes
         }, newVersion);                            // use current version for OCC
 
-        console.error("[FactMerger] Context merged and patched for \"" + project + "\"");
+        debugLog("[FactMerger] Context merged and patched for \"" + project + "\"");
       } catch (err) {
         // OCC conflict = user saved again while merge was running (expected)
         const errMsg = err instanceof Error ? err.message : String(err);
         if (errMsg.includes("conflict") || errMsg.includes("version")) {
           // This is GOOD behavior — user's active input takes precedence
-          console.error("[FactMerger] Merge skipped due to active session (OCC conflict)");
+          debugLog("[FactMerger] Merge skipped due to active session (OCC conflict)");
         } else {
           // Unexpected error — log but don't crash
           console.error("[FactMerger] Background merge failed (non-fatal): " + errMsg);
@@ -387,7 +388,7 @@ export async function sessionLoadContextHandler(args: unknown) {
     };
   }
 
-  console.error(`[session_load_context] Loading ${level} context for project="${project}"`);
+  debugLog(`[session_load_context] Loading ${level} context for project="${project}"`);
 
   const storage = await getStorage();
   const data = await storage.loadContext(project, level, PRISM_USER_ID);
@@ -422,7 +423,7 @@ export async function sessionLoadContextHandler(args: unknown) {
         driftReport = `\n\n⚠️ **CONTEXT SHIFT:** This memory was saved on branch ` +
           `\`${meta.git_branch}\`, but you are currently on branch \`${currentGit.branch}\`. ` +
           `Code may have diverged — review carefully before making changes.`;
-        console.error(
+        debugLog(
           `[session_load_context] Context shift detected: ${meta.git_branch} → ${currentGit.branch}`
         );
       } else if (currentGit.commitSha !== meta.last_commit_sha) {
@@ -433,12 +434,12 @@ export async function sessionLoadContextHandler(args: unknown) {
             `Since this memory was saved (commit ${(meta.last_commit_sha as string).substring(0, 8)}), ` +
             `the following files were modified outside of agent sessions:\n\`\`\`\n${changes}\n\`\`\`\n` +
             `Please review these files if they overlap with your current task.`;
-          console.error(
+          debugLog(
             `[session_load_context] Reality drift detected! ${changes.split("\n").length} files changed`
           );
         }
       } else {
-        console.error(`[session_load_context] No drift — repo matches saved state`);
+        debugLog(`[session_load_context] No drift — repo matches saved state`);
       }
     }
   }
@@ -504,14 +505,14 @@ export async function sessionLoadContextHandler(args: unknown) {
         );
       }
 
-      console.error(`[session_load_context] Morning Briefing generated for "${project}"`);
+      debugLog(`[session_load_context] Morning Briefing generated for "${project}"`);
     } catch (err) {
       console.error(`[session_load_context] Morning Briefing failed (non-fatal): ${err}`);
     }
   } else if (meta?.morning_briefing) {
     // Show the cached briefing (generated within last 4 hours)
     briefingBlock = `\n\n[🌅 MORNING BRIEFING]\n${meta.morning_briefing}`;
-    console.error(`[session_load_context] Showing cached Morning Briefing for "${project}"`);
+    debugLog(`[session_load_context] Showing cached Morning Briefing for "${project}"`);
   }
 
   // ─── Visual Memory Index (v2.0 Step 9) ───
@@ -525,10 +526,32 @@ export async function sessionLoadContextHandler(args: unknown) {
     });
   }
 
+  const d = data as Record<string, any>;
+  let formattedContext = ``;
+  if (d.last_summary) formattedContext += `📝 Last Summary: ${d.last_summary}\n`;
+  if (d.active_branch) formattedContext += `🌿 Active Branch: ${d.active_branch}\n`;
+  if (d.key_context) formattedContext += `💡 Key Context: ${d.key_context}\n`;
+  
+  if (d.pending_todo?.length) {
+    formattedContext += `\n✅ Open TODOs:\n` + d.pending_todo.map((t: string) => `  - ${t}`).join("\n") + `\n`;
+  }
+  if (d.active_decisions?.length) {
+    formattedContext += `\n⚖️ Active Decisions:\n` + d.active_decisions.map((dec: string) => `  - ${dec}`).join("\n") + `\n`;
+  }
+  if (d.keywords?.length) {
+    formattedContext += `\n🔑 Keywords: ${d.keywords.join(", ")}\n`;
+  }
+  if (d.recent_sessions?.length) {
+    formattedContext += `\n⏳ Recent Sessions:\n` + d.recent_sessions.map((s: any) => `  [${s.session_date?.split("T")[0]}] ${s.summary}`).join("\n") + `\n`;
+  }
+  if (d.session_history?.length) {
+    formattedContext += `\n📂 Session History (${d.session_history.length} entries):\n` + d.session_history.map((s: any) => `  [${s.session_date?.split("T")[0]}] ${s.summary}`).join("\n") + `\n`;
+  }
+
   return {
     content: [{
       type: "text",
-      text: `📋 Session context for "${project}" (${level}):\n\n${JSON.stringify(data, null, 2)}${driftReport}${briefingBlock}${visualMemoryBlock}${versionNote}`,
+      text: `📋 Session context for "${project}" (${level}):\n\n${formattedContext.trim()}${driftReport}${briefingBlock}${visualMemoryBlock}${versionNote}`,
     }],
     isError: false,
   };
@@ -546,7 +569,7 @@ export async function knowledgeSearchHandler(args: unknown) {
 
   const { project, query, category, limit = 10 } = args;
 
-  console.error(`[knowledge_search] Searching: project=${project || "all"}, query="${query || ""}", category=${category || "any"}, limit=${limit}`);
+  debugLog(`[knowledge_search] Searching: project=${project || "all"}, query="${query || ""}", category=${category || "any"}, limit=${limit}`);
 
   const searchKeywords = query ? toKeywordArray(query) : [];
   const storage = await getStorage();
@@ -615,7 +638,7 @@ export async function knowledgeForgetHandler(args: unknown) {
     };
   }
 
-  console.error(`[knowledge_forget] ${dry_run ? "DRY RUN: " : ""}Forgetting: ` +
+  debugLog(`[knowledge_forget] ${dry_run ? "DRY RUN: " : ""}Forgetting: ` +
     `project=${project || "ALL"}, category=${category || "any"}, ` +
     `older_than=${older_than_days || "any"}d, clear_handoff=${clear_handoff}`);
 
@@ -688,7 +711,7 @@ export async function sessionSearchMemoryHandler(args: unknown) {
     similarity_threshold = 0.7,
   } = args;
 
-  console.error(
+  debugLog(
     `[session_search_memory] Semantic search: query="${query}", ` +
     `project=${project || "all"}, limit=${limit}, threshold=${similarity_threshold}`
   );
@@ -807,7 +830,7 @@ export async function backfillEmbeddingsHandler(args: unknown) {
   const { project, limit = 20, dry_run = false } = args;
   const safeLimit = Math.min(limit, 50);
 
-  console.error(
+  debugLog(
     `[backfill_embeddings] ${dry_run ? "DRY RUN: " : ""}` +
     `project=${project || "all"}, limit=${safeLimit}`
   );
@@ -866,7 +889,7 @@ export async function backfillEmbeddingsHandler(args: unknown) {
       ].filter(Boolean).join(" | ");
 
       if (!textToEmbed.trim()) {
-        console.error(`[backfill] Skipping entry ${e.id}: no text content`);
+        debugLog(`[backfill] Skipping entry ${e.id}: no text content`);
         failed++;
         continue;
       }
@@ -878,7 +901,7 @@ export async function backfillEmbeddingsHandler(args: unknown) {
       });
 
       repaired++;
-      console.error(`[backfill] ✅ Repaired ${e.id} (${e.project})`);
+      debugLog(`[backfill] ✅ Repaired ${e.id} (${e.project})`);
     } catch (err) {
       failed++;
       console.error(`[backfill] ❌ Failed ${(entry as any).id}: ${err instanceof Error ? err.message : err}`);
@@ -914,7 +937,7 @@ export async function memoryHistoryHandler(args: unknown) {
   const { project, limit = 10 } = args;
   const storage = await getStorage();
 
-  console.error(`[memory_history] Fetching history for project="${project}" (limit=${limit})`);
+  debugLog(`[memory_history] Fetching history for project="${project}" (limit=${limit})`);
 
   const history = await storage.getHistory(project, PRISM_USER_ID, Math.min(limit, 50));
 
@@ -963,7 +986,7 @@ export async function memoryCheckoutHandler(args: unknown) {
   const { project, target_version } = args;
   const storage = await getStorage();
 
-  console.error(
+  debugLog(
     `[memory_checkout] Reverting project="${project}" to version ${target_version}`
   );
 
@@ -1145,7 +1168,7 @@ export async function sessionSaveImageHandler(args: unknown) {
 
   const fileSize = fs.statSync(vaultPath).size;
   const sizeKB = (fileSize / 1024).toFixed(1);
-  console.error(`[Visual Memory] Saved image [${imageId}] for "${project}" (${sizeKB}KB, ${ext})`);
+  debugLog(`[Visual Memory] Saved image [${imageId}] for "${project}" (${sizeKB}KB, ${ext})`);
 
   return {
     content: [{
@@ -1224,7 +1247,7 @@ export async function sessionViewImageHandler(args: unknown) {
   const mimeType = MIME_MAP[ext] || "image/png";
 
   const fileSize = fs.statSync(vaultPath).size;
-  console.error(`[Visual Memory] Retrieved image [${image_id}] for "${project}" (${(fileSize / 1024).toFixed(1)}KB)`);
+  debugLog(`[Visual Memory] Retrieved image [${image_id}] for "${project}" (${(fileSize / 1024).toFixed(1)}KB)`);
 
   // Return MCP content array with text + image
   return {
@@ -1275,7 +1298,7 @@ export async function sessionHealthCheckHandler(args: unknown) {
 
   const autoFix = args.auto_fix || false;  // default: read-only scan
 
-  console.error("[Health Check] Running fsck (auto_fix=" + autoFix + ")");
+  debugLog("[Health Check] Running fsck (auto_fix=" + autoFix + ")");
 
   try {
     // Get the storage backend (SQLite or Supabase)
@@ -1294,13 +1317,13 @@ export async function sessionHealthCheckHandler(args: unknown) {
         i => i.check === "missing_embeddings"
       );
       if (embeddingIssue && embeddingIssue.count > 0) {
-        console.error(
+        debugLog(
           "[Health Check] Auto-fixing " + embeddingIssue.count + " missing embeddings..."
         );
         try {
           await backfillEmbeddingsHandler({ dry_run: false, limit: 50 });
           fixedCount += embeddingIssue.count;
-          console.error("[Health Check] Backfill complete.");
+          debugLog("[Health Check] Backfill complete.");
         } catch (err) {
           console.error("[Health Check] Backfill failed: " + err);
         }

@@ -18,6 +18,7 @@
  */
 
 import { SyncBus } from "./index.js";
+import { debugLog } from "../utils/logger.js";
 
 export class SupabaseSyncBus extends SyncBus {
   private supabaseUrl: string;
@@ -59,7 +60,7 @@ export class SupabaseSyncBus extends SyncBus {
           (payload: any) => {
             const newRow = payload.new;
             if (newRow) {
-              console.error(
+              debugLog(
                 `[SyncBus:Supabase] Received update: project=${newRow.project}, version=${newRow.version}`
               );
               this.emit("update", {
@@ -72,10 +73,10 @@ export class SupabaseSyncBus extends SyncBus {
           }
         )
         .subscribe((status: string) => {
-          console.error(`[SyncBus:Supabase] Channel status: ${status}`);
+          debugLog(`[SyncBus:Supabase] Channel status: ${status}`);
         });
 
-      console.error(
+      debugLog(
         `[SyncBus:Supabase] Listening for realtime updates ` +
           `(client=${this.clientId.substring(0, 8)})`
       );
@@ -94,7 +95,7 @@ export class SupabaseSyncBus extends SyncBus {
     if (this.channel && this.supabase) {
       try {
         await this.supabase.removeChannel(this.channel);
-        console.error("[SyncBus:Supabase] Stopped listening");
+        debugLog("[SyncBus:Supabase] Stopped listening");
       } catch {
         // Ignore cleanup errors
       }

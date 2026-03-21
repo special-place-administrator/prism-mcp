@@ -103,19 +103,18 @@ export const PRISM_CAPTURE_PORTS = (process.env.PRISM_CAPTURE_PORTS || "3000,300
   .map(p => parseInt(p.trim(), 10))
   .filter(p => !isNaN(p));
 
+// ─── v2.3: Debug Logging ──────────────────────────────────────
+// Optionally enable verbose output (stderr) for Prism initialization,
+// memory indexing, and background tasks.
+
+export const PRISM_DEBUG_LOGGING = process.env.PRISM_DEBUG_LOGGING === "true";
+
 if (PRISM_AUTO_CAPTURE) {
-  console.error(`[AutoCapture] Enabled for ports: ${PRISM_CAPTURE_PORTS.join(", ")}`);
-}
-
-// ─── Debug Logging ──────────────────────────────────────────────
-// Set PRISM_DEBUG=true to enable verbose startup and operational logs.
-// When disabled (default), only warnings and errors are printed.
-
-export const PRISM_DEBUG = process.env.PRISM_DEBUG === "true";
-
-/** Conditional debug logger — only prints when PRISM_DEBUG=true. */
-export function debug(...args: unknown[]): void {
-  if (PRISM_DEBUG) {
-    console.error(...args);
+  // Use console.error instead of debugLog here to prevent circular dependency
+  if (PRISM_DEBUG_LOGGING) {
+    console.error(`[AutoCapture] Enabled for ports: ${PRISM_CAPTURE_PORTS.join(", ")}`);
   }
 }
+
+
+

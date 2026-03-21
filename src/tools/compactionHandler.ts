@@ -10,6 +10,7 @@
 import { getStorage } from "../storage/index.js";
 import { GOOGLE_API_KEY, PRISM_USER_ID } from "../config.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { debugLog } from "../utils/logger.js";
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ export async function compactLedgerHandler(args: unknown) {
     dry_run = false,
   } = args;
 
-  console.error(
+  debugLog(
     `[compact_ledger] ${dry_run ? "DRY RUN: " : ""}` +
     `project=${project || "auto-detect"}, threshold=${threshold}, keep_recent=${keep_recent}`
   );
@@ -144,7 +145,7 @@ export async function compactLedgerHandler(args: unknown) {
     const proj = candidate.project;
     const toCompact = Math.min(candidate.to_compact, MAX_ENTRIES_PER_RUN);
 
-    console.error(`[compact_ledger] Compacting ${toCompact} entries for "${proj}"`);
+    debugLog(`[compact_ledger] Compacting ${toCompact} entries for "${proj}"`);
 
     // Fetch oldest entries (the ones to be rolled up)
     const oldEntries = await storage.getLedgerEntries({

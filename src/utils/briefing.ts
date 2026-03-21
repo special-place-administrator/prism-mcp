@@ -15,6 +15,7 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GOOGLE_API_KEY } from "../config.js";
+import { debugLog } from "./logger.js";
 
 export interface BriefingContext {
   project: string;
@@ -81,7 +82,7 @@ Rules:
   try {
     const result = await model.generateContent(prompt);
     const text = result.response.text().trim();
-    console.error(`[Morning Briefing] Generated for "${context.project}" (${text.length} chars)`);
+    debugLog(`[Morning Briefing] Generated for "${context.project}" (${text.length} chars)`);
     return text;
   } catch (error) {
     console.error(

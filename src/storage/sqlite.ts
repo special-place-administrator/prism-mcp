@@ -33,6 +33,7 @@ import type {
   HistorySnapshot,
   HealthStats,        // v2.2.0: Health check (fsck) aggregate type
 } from "./interface.js";
+import { debugLog } from "../utils/logger.js";
 
 export class SqliteStorage implements StorageBackend {
   private db!: Client;
@@ -59,12 +60,12 @@ export class SqliteStorage implements StorageBackend {
     // Run all migrations
     await this.runMigrations();
 
-    console.error(`[SqliteStorage] Initialized at ${this.dbPath}`);
+    debugLog(`[SqliteStorage] Initialized at ${this.dbPath}`);
   }
 
   async close(): Promise<void> {
     this.db.close();
-    console.error("[SqliteStorage] Closed");
+    debugLog("[SqliteStorage] Closed");
   }
 
   // ─── Migrations ────────────────────────────────────────────

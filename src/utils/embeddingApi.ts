@@ -35,6 +35,7 @@
 
 import { GoogleGenerativeAI, TaskType } from "@google/generative-ai";
 import { GOOGLE_API_KEY } from "../config.js";
+import { debugLog } from "./logger.js";
 
 // ─── Constants ────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   // Fix: truncate at the last word boundary before the limit.
   let inputText = text;
   if (inputText.length > MAX_EMBEDDING_CHARS) {
-    console.error(
+    debugLog(
       `[embedding] Input text truncated from ${inputText.length} to ~${MAX_EMBEDDING_CHARS} chars (word-safe)`
     );
     inputText = inputText.substring(0, MAX_EMBEDDING_CHARS);
@@ -98,7 +99,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     { apiVersion: "v1beta" }  // gemini-embedding-001 requires v1beta
   );
 
-  console.error(`[embedding] Generating 768-dim embedding for ${inputText.length} chars`);
+  debugLog(`[embedding] Generating 768-dim embedding for ${inputText.length} chars`);
 
   const result = await model.embedContent({
     content: {

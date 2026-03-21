@@ -25,6 +25,7 @@
 import type { HealthStats } from "../storage/interface.js";  // raw stats from DB
 import { GoogleGenerativeAI } from "@google/generative-ai";  // Gemini SDK
 import { GOOGLE_API_KEY } from "../config.js";               // API key from env
+import { debugLog } from "./logger.js";
 
 // ─── Security Scanner (v2.3.0) ───────────────────────────────
 
@@ -59,7 +60,7 @@ export async function scanForPromptInjection(
 ): Promise<SecurityScanResult> {
   // No API key = skip scan gracefully (don't block health check)
   if (!GOOGLE_API_KEY) {
-    console.error("[Security Scan] Skipped — no GOOGLE_API_KEY configured");
+    debugLog("[Security Scan] Skipped — no GOOGLE_API_KEY configured");
     return { safe: true };  // assume safe when we can't check
   }
 
@@ -102,7 +103,7 @@ export async function scanForPromptInjection(
       .trim();                                                // trim whitespace
     const parsed = JSON.parse(cleaned);                       // parse JSON
 
-    console.error(
+    debugLog(
       "[Security Scan] Result: safe=" + parsed.safe +
       (parsed.reason ? ", reason=" + parsed.reason : "")
     );

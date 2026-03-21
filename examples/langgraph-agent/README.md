@@ -120,6 +120,22 @@ This proves the architecture is **decoupled** — the LangGraph agent orchestrat
 
 This agent lives inside the [Prism MCP](https://github.com/yourusername/bcba) repository as a showcase of how LangGraph agents can integrate with MCP servers. See [INTEGRATION_PLAN.md](./INTEGRATION_PLAN.md) for the 4-phase integration roadmap.
 
+## Known Limitations
+
+### Windows: Stdio Transport & `anyio`
+
+When running this agent on Windows, two terminal windows spawn momentarily during MCP server initialization. This is an **upstream dependency constraint**, not a bug in this codebase.
+
+The Anthropic Python `mcp` SDK relies on [`anyio`](https://github.com/agronholm/anyio) for asynchronous process management. `anyio` abstracts OS-level subprocess creation to be cross-platform, and currently **does not expose** the native Windows `CREATE_NO_WINDOW` (`0x08000000`) subprocess flag. The flag cannot be passed through `StdioServerParameters` without monkey-patching the SDK.
+
+**Future Architecture Path:** For production deployment, the MCP bridge should be migrated from `stdio_client` to `sse_client`, connecting to a headless, containerized MCP server via HTTP/SSE — eliminating local OS terminal constraints entirely.
+
+```python
+# Future: SSE transport (zero subprocess windows)
+from mcp.client.sse import sse_client
+transport = sse_client("http://localhost:3001/sse")
+```
+
 ## License
 
 MIT — Part of the Prism MCP project.

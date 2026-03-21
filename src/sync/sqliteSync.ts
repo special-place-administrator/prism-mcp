@@ -30,6 +30,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { SyncBus, SyncEvent } from "./index.js";
+import { debugLog } from "../utils/logger.js";
 
 export class SqliteSyncBus extends SyncBus {
   private lockFilePath: string;
@@ -59,7 +60,7 @@ export class SqliteSyncBus extends SyncBus {
 
     // Atomic write — content is < 200 bytes, well within single-page write
     fs.writeFileSync(this.lockFilePath, JSON.stringify(payload), "utf8");
-    console.error(
+    debugLog(
       `[SyncBus] Broadcast: project=${project}, version=${version}, ` +
         `client=${this.clientId.substring(0, 8)}`
     );
@@ -79,7 +80,7 @@ export class SqliteSyncBus extends SyncBus {
 
           // Only emit if it came from a DIFFERENT Prism MCP instance
           if (event.client_id && event.client_id !== this.clientId) {
-            console.error(
+            debugLog(
               `[SyncBus] Received update from client ${event.client_id.substring(0, 8)}: ` +
                 `project=${event.project}, version=${event.version}`
             );
@@ -91,7 +92,7 @@ export class SqliteSyncBus extends SyncBus {
       }
     });
 
-    console.error(
+    debugLog(
       `[SyncBus] Listening for updates on ${this.lockFilePath} ` +
         `(client=${this.clientId.substring(0, 8)})`
     );
@@ -101,6 +102,6 @@ export class SqliteSyncBus extends SyncBus {
     if (!this.watching) return;
     this.watching = false;
     fs.unwatchFile(this.lockFilePath);
-    console.error("[SyncBus] Stopped listening");
+    debugLog("[SyncBus] Stopped listening");
   }
 }

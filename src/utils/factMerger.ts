@@ -36,6 +36,7 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";  // Gemini SDK for LLM calls
 import { GOOGLE_API_KEY } from "../config.js";               // API key from environment
+import { debugLog } from "./logger.js";
 
 /**
  * Merge old and new key_context using Gemini to resolve contradictions.
@@ -62,7 +63,7 @@ export async function consolidateFacts(
 ): Promise<string> {
   // Guard: need API key to call Gemini
   if (!GOOGLE_API_KEY) {
-    console.error("[FactMerger] Skipped — no GOOGLE_API_KEY configured");
+    debugLog("[FactMerger] Skipped — no GOOGLE_API_KEY configured");
     return newContext;  // fallback: just use the new context as-is
   }
 
@@ -76,7 +77,7 @@ export async function consolidateFacts(
 
   // Guard: if old and new are identical, skip the LLM call entirely
   if (oldContext.trim() === newContext.trim()) {
-    console.error("[FactMerger] Old and new context are identical — skipping merge");
+    debugLog("[FactMerger] Old and new context are identical — skipping merge");
     return newContext;  // no changes needed
   }
 
@@ -109,7 +110,7 @@ export async function consolidateFacts(
   const mergedText = result.response.text().trim();
 
   // Log the merge result for debugging (to stderr, not stdout)
-  console.error(
+  debugLog(
     "[FactMerger] Merged context (" +
     oldContext.length + " chars old + " +
     newContext.length + " chars new → " +

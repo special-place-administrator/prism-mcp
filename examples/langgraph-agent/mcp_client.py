@@ -91,6 +91,18 @@ class PrismMCPBridge:
         print(f"🔌 Starting Prism MCP server: {self.command} {' '.join(self.args)}")
 
         # Start the server as a subprocess with stdio pipes
+        #
+        # KNOWN LIMITATION — Windows terminal popup:
+        # On Windows, subprocess.Popen opens a visible console for each child
+        # process. The standard fix is CREATE_NO_WINDOW (0x08000000), which
+        # we apply below for our direct Popen call. However, this does NOT
+        # fix popups from the official Anthropic `mcp` SDK (StdioServerParameters),
+        # because the SDK delegates process creation to `anyio`, which strips
+        # out creationflags. The only SDK-level fix is to migrate from
+        # stdio_client → sse_client (HTTP transport, zero subprocesses).
+        # See README.md → Known Limitations for the full explanation.
+        CREATE_NO_WINDOW = 0x08000000
+        creation_flags = CREATE_NO_WINDOW if sys.platform == "win32" else 0
         self.process = subprocess.Popen(
             [self.command] + self.args,
             stdin=subprocess.PIPE,
@@ -98,6 +110,7 @@ class PrismMCPBridge:
             stderr=subprocess.PIPE,
             env=self.env,
             bufsize=0,  # Unbuffered for real-time communication
+            creationflags=creation_flags,
         )
 
         # Start background thread to read stderr (server logs)

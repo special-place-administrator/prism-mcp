@@ -8,6 +8,7 @@
  */
 
 import { PRISM_STORAGE } from "../config.js";
+import { debugLog } from "../utils/logger.js";
 import type { SyncBus } from "./index.js";
 
 let _bus: SyncBus | null = null;
@@ -33,6 +34,6 @@ export async function getSyncBus(): Promise<SyncBus> {
     }
   }
 
-  console.error(`[SyncBus] Initialized: ${_bus.constructor.name} (client=${_bus.clientId.substring(0, 8)})`);
+  debugLog(`[SyncBus] Initialized: ${_bus.constructor.name} (client=${_bus.clientId.substring(0, 8)})`);
   return _bus;
 }
