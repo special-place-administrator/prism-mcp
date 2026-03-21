@@ -14,7 +14,16 @@
 
 ---
 
-## What's New in v2.3.8 — LangGraph Research Agent 🔬
+## What's New in v2.3.10 — Stability & Fixes 🛠️
+
+| Feature | Description |
+|---|---|
+| 🪲 **Windows Black Screen Fix** | Fixed Python `subprocess.Popen` spawning visible Node.js terminal windows on Windows. |
+| 📝 **Debug Logging** | Gated verbose startup logs behind `PRISM_DEBUG_LOGGING` for a cleaner default experience. |
+| ⚡ **Excess Loading Fixes** | Performance improvements to resolve excess loading loops. |
+
+<details>
+<summary><strong>What's in v2.3.8 — LangGraph Research Agent</strong></summary>
 
 | Feature | Description |
 |---|---|
@@ -23,6 +32,8 @@
 | 🔌 **MCP Client Bridge** | Raw JSON-RPC 2.0 client (`mcp_client.py`) for Python 3.9+ — dynamically discovers and wraps Prism MCP tools as LangChain `StructuredTool` objects. |
 | 🔧 **Storage Abstraction Fix** | Resource/Prompt handlers now route through `getStorage()` instead of calling Supabase directly — eliminates EOF crashes when reading `memory://` resources. |
 | 🛡️ **Error Boundaries** | Resource handlers catch errors gracefully and return proper MCP error responses (`isError: true`) instead of crashing the server process. |
+
+</details>
 
 <details>
 <summary><strong>What's in v2.2.0</strong></summary>
