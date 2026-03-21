@@ -14,15 +14,15 @@
 
 ---
 
-## What's New in v2.3.7 — Stability & AI Reasoning Engine 🧠
+## What's New in v2.3.8 — LangGraph Research Agent 🔬
 
 | Feature | Description |
 |---|---|
-| 🔧 **Storage Abstraction Fix** | Critical fix: Resource/Prompt handlers now route through the storage abstraction layer (`getStorage()`) instead of calling Supabase directly — eliminates EOF crashes when reading `memory://` resources. |
-| 🛡️ **Error Boundaries** | Resource handlers now catch errors gracefully and return proper MCP error responses (`isError: true`) instead of crashing the server process. |
-| 🕸️ **Neural Graph** | Interactive knowledge graph on the Mind Palace Dashboard — visualize how projects connect through shared keywords and categories using Vis.js force-directed layout. |
-| 🛡️ **Prompt Injection Shield** | Gemini-powered security scan in `session_health_check` — detects system override attempts, jailbreaks, and data exfiltration hidden in agent memory. Tuned to avoid false positives on normal dev commands. |
-| 🧬 **Fact Merger** | Async LLM contradiction resolution on every handoff save — if old context says "Postgres" and new says "MySQL", Gemini silently merges the facts in the background. Zero latency impact (fire-and-forget). |
+| 🤖 **LangGraph Research Agent** | New `examples/langgraph-agent/` — a 5-node agentic research agent (plan→search→analyze→decide→answer→save) with autonomous looping, MCP integration, and persistent memory. |
+| 🧠 **Agentic Memory** | `save_session` node persists research findings to a ledger — the agent doesn't just answer and forget. Routes to Prism's `session_save_ledger` in MCP-connected mode. |
+| 🔌 **MCP Client Bridge** | Raw JSON-RPC 2.0 client (`mcp_client.py`) for Python 3.9+ — dynamically discovers and wraps Prism MCP tools as LangChain `StructuredTool` objects. |
+| 🔧 **Storage Abstraction Fix** | Resource/Prompt handlers now route through `getStorage()` instead of calling Supabase directly — eliminates EOF crashes when reading `memory://` resources. |
+| 🛡️ **Error Boundaries** | Resource handlers catch errors gracefully and return proper MCP error responses (`isError: true`) instead of crashing the server process. |
 
 <details>
 <summary><strong>What's in v2.2.0</strong></summary>
@@ -250,6 +250,39 @@ Add to your Continue `config.json` or Cline MCP settings:
 ```
 
 </details>
+
+---
+
+## Claude Code + Gemini Startup Compatibility
+
+If you want consistent behavior across clients, treat startup in two phases:
+
+1. **Server availability**: ensure `prism-mcp` is enabled in MCP config so tools are available.
+2. **Context hydration**: explicitly call `session_load_context` at session start.
+
+Recommended startup call:
+
+```json
+{
+  "projectName": "<your-project>",
+  "level": "standard"
+}
+```
+
+Important distinction:
+
+- Auto-loading `prism-mcp` makes the server available.
+- It does **not** guarantee memory context is auto-hydrated unless your client runtime/hook invokes `session_load_context`.
+
+Client notes:
+
+- **Gemini runtimes** may support native startup execution depending on configuration.
+- **Claude Code** should use a local `SessionStart` hook in `~/.claude/settings.json` for deterministic startup context loading.
+
+Verification pattern (same for both clients):
+
+- Print a startup marker after successful `session_load_context` (for example, `PRISM_CONTEXT_LOADED`).
+- If the marker is missing, startup hydration did not run.
 
 ---
 
