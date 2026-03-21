@@ -24,15 +24,14 @@
 // multi-tenant Row Level Security (RLS) for production hosting.
 export const SERVER_CONFIG = {
   name: "prism-mcp",
-  version: "1.5.0",
+  version: "2.3.0",
 };
 
 // ─── Required: Brave Search API Key ───────────────────────────
 
 export const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 if (!BRAVE_API_KEY) {
-  console.error("Error: BRAVE_API_KEY environment variable is required");
-  process.exit(1);
+  console.error("Warning: BRAVE_API_KEY environment variable is missing. Search tools will return errors when called.");
 }
 
 // ─── Optional: Google Gemini API Key ──────────────────────────

@@ -639,11 +639,75 @@ export function createServer() {
   return server;
 }
 
-// ─── Smithery Sandbox Export ─────────────────────────────────────
-// Smithery uses this to scan capabilities (tools, prompts, resources)
-// without requiring real credentials or starting a transport.
+// ─── Smithery/Glama Sandbox Export ───────────────────────────────
+// Scanners (Smithery, Glama) use this to enumerate capabilities
+// (tools, prompts, resources) without requiring real credentials.
+// Unlike createServer(), this always exposes ALL capabilities
+// regardless of whether SESSION_MEMORY_ENABLED is true.
 export function createSandboxServer() {
-  return createServer();
+  const server = new Server(
+    {
+      name: SERVER_CONFIG.name,
+      version: SERVER_CONFIG.version,
+    },
+    {
+      capabilities: {
+        tools: {
+          tools: [...BASE_TOOLS, ...SESSION_MEMORY_TOOLS],
+        },
+        prompts: {},
+        resources: { subscribe: true },
+      },
+    }
+  );
+
+  // Register all tool listings unconditionally
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [...BASE_TOOLS, ...SESSION_MEMORY_TOOLS],
+  }));
+
+  // Register prompts listing so scanners see resume_session
+  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: [{
+      name: "resume_session",
+      description:
+        "Load previous session context for a project. " +
+        "Automatically fetches handoff state and injects it before " +
+        "the LLM starts thinking — no tool call needed. " +
+        "Includes version tracking for concurrency control.",
+      arguments: [
+        {
+          name: "project",
+          description: "Project identifier to resume (e.g., 'prism-mcp')",
+          required: true,
+        },
+        {
+          name: "level",
+          description:
+            "Context depth: 'quick' (~50 tokens), " +
+            "'standard' (~200 tokens, recommended), " +
+            "'deep' (full history, ~1000+ tokens)",
+          required: false,
+        },
+      ],
+    }],
+  }));
+
+  // Register resource templates so scanners see memory://{project}/handoff
+  server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: [{
+      uriTemplate: "memory://{project}/handoff",
+      name: "Session Handoff State",
+      description:
+        "Current handoff state for a project — includes " +
+        "last summary, pending TODOs, active decisions, keywords, " +
+        "and version number for concurrency control. " +
+        "Attach this to inject session context without a tool call.",
+      mimeType: "application/json",
+    }],
+  }));
+
+  return server;
 }
 
 // ─── Server Startup ─────────────────────────────────────────────
