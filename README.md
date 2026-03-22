@@ -17,7 +17,7 @@
 - [What's New (v2.5.0)](#whats-new-in-v250---enterprise-memory-)
 - [How Prism Compares](#how-prism-compares)
 - [Quick Start](#quick-start-zero-config--local-mode)
-- [Mind Palace Dashboard](#-the-mind-palace-dashboard)
+- [Mind Palace Dashboard](#the-mind-palace-dashboard)
 - [Integration Examples](#integration-examples)
 - [Use Cases](#use-cases)
 - [Architecture](#architecture)
@@ -577,6 +577,7 @@ Add this rule to your `~/.gemini/GEMINI.md` global rules file:
 ```markdown
 
 ## Prism MCP Memory Auto-Load (CRITICAL)
+
 **At the start of every new session**, immediately after displaying
 the startup block, you MUST call `session_load_context` (via the
 `athena-public` MCP server) at the `standard` level for these projects:
