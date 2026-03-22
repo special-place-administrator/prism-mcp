@@ -29,6 +29,7 @@
 - [Agent Telepathy](#agent-telepathy-multi-client-sync)
 - [Knowledge Accumulation](#knowledge-accumulation)
 - [GDPR Compliance](#gdpr-compliance)
+- [Observability & Tracing](#observability--tracing)
 - [Supabase Setup](#supabase-setup-cloud-mode)
 - [Project Structure](#project-structure)
 
@@ -750,6 +751,45 @@ Prism supports surgical, per-entry deletion for GDPR Article 17 compliance:
 | Consent Management | ➖ Out of scope | Application-layer responsibility |
 
 > **Note:** No software is "GDPR certified" on its own — GDPR is an organizational compliance framework. Prism provides the technical controls that a DPO (Data Protection Officer) needs to satisfy the data deletion and privacy-by-design requirements.
+
+---
+
+## Observability & Tracing
+
+Prism MCP includes a custom **MemoryTrace** engine that provides per-query observability for every memory operation. This is not the OpenTelemetry SDK — it's a lightweight, zero-dependency tracing system purpose-built for MCP.
+
+### What MemoryTrace Provides
+
+| Capability | MemoryTrace | Full OpenTelemetry SDK |
+|------------|:-----------:|:----------------------:|
+| Per-query latency breakdown (`embedding_ms`, `storage_ms`, `total_ms`) | ✅ | ✅ |
+| Search strategy attribution (`semantic`, `keyword`, `hybrid`) | ✅ | ❌ (custom) |
+| Result scoring metadata | ✅ | ❌ (custom) |
+| LangSmith integration (via retriever metadata) | ✅ | ✅ |
+| W3C `traceparent` / distributed trace context | ❌ | ✅ |
+| Export to Jaeger / Zipkin / Datadog | ❌ | ✅ |
+| Auto-instrumentation of HTTP / DB calls | ❌ | ✅ |
+| External SDK dependency | **None** | `@opentelemetry/sdk-*` |
+
+### Example MemoryTrace Output
+
+```json
+{
+  "type": "text",
+  "text": "{\"trace\":{\"strategy\":\"semantic\",\"latency\":{\"embedding_ms\":45,\"storage_ms\":12,\"total_ms\":57},\"result_count\":3,\"threshold\":0.7}}"
+}
+```
+
+Traces are returned as `content[1]` in MCP responses — a separate content block that keeps structured telemetry out of the LLM's context window while making it available to orchestration layers like LangSmith.
+
+### Roadmap
+
+| Feature | Status |
+|---------|--------|
+| MemoryTrace (current) | ✅ Shipped |
+| OpenTelemetry SDK integration | ⬜ Planned |
+| Span export to Jaeger/Zipkin | ⬜ Planned |
+| W3C Trace Context propagation | ⬜ Planned |
 
 ---
 
