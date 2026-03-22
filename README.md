@@ -12,6 +12,26 @@
 >
 > Built with **SQLite + F32_BLOB vector search**, **optimistic concurrency control**, **MCP Prompts & Resources**, **auto-compaction**, **Gemini-powered Morning Briefings**, **MemoryTrace explainability**, and optional **Supabase cloud sync**.
 
+## Table of Contents
+
+- [What's New (v2.5.0)](#whats-new-in-v250--enterprise-memory-️)
+- [How Prism Compares](#how-prism-compares)
+- [Quick Start](#quick-start-zero-config--local-mode)
+- [Mind Palace Dashboard](#-the-mind-palace-dashboard)
+- [Integration Examples](#integration-examples)
+- [Use Cases](#use-cases)
+- [Architecture](#architecture)
+- [Tool Reference](#tool-reference)
+- [LangChain / LangGraph Integration](#langchain--langgraph-integration)
+- [Environment Variables](#environment-variables)
+- [Progressive Context Loading](#progressive-context-loading)
+- [Time Travel](#time-travel-version-history)
+- [Agent Telepathy](#agent-telepathy-multi-client-sync)
+- [Knowledge Accumulation](#knowledge-accumulation)
+- [GDPR Compliance](#gdpr-compliance)
+- [Supabase Setup](#supabase-setup-cloud-mode)
+- [Project Structure](#project-structure)
+
 ---
 
 ## What's New in v2.5.0 — Enterprise Memory 🏗️
@@ -74,6 +94,8 @@
 </details>
 
 ---
+
+> 💡 **TL;DR:** Prism MCP gives your AI agent persistent memory using a local SQLite database. No cloud accounts, no API keys, and no Postgres/Qdrant containers required. Just `npx -y prism-mcp-server` and you're running.
 
 ## How Prism Compares
 
@@ -435,7 +457,7 @@ Instead of writing custom JavaScript, pass a `template` name for instant extract
 | `slack_messages` | Slack Web API | `[timestamp] @user: message` |
 | `csv_summary` | CSV text | Column names, row count, sample rows |
 
-**Usage:** `{ "data": "<raw JSON>", "template": "github_issues" }` — no custom code needed.
+**Tool Arguments:** `{ "data": "<raw JSON>", "template": "github_issues" }` — no custom code needed.
 
 ---
 
@@ -668,7 +690,7 @@ Every `session_save_ledger` and `session_save_handoff` automatically extracts ke
 | **By age** | `older_than_days: 30` | Forget entries older than 30 days |
 | **Dry run** | `dry_run: true` | Preview what would be deleted |
 
-### GDPR-Compliant Deletion (v2.5)
+### GDPR-Compliant Deletion
 
 Prism supports surgical, per-entry deletion for GDPR Article 17 compliance:
 
@@ -690,12 +712,6 @@ Prism supports surgical, per-entry deletion for GDPR Article 17 compliance:
 - **Soft delete** sets `deleted_at = NOW()` + `deleted_reason`. The entry stays in the DB for audit but is excluded from ALL search results (vector, FTS5, and context loading).
 - **Hard delete** physically removes the row. FTS5 triggers auto-clean the full-text index.
 - **Top-K Hole Prevention**: `deleted_at IS NULL` filtering happens INSIDE the SQL query, BEFORE the `LIMIT` clause — so `LIMIT 5` always returns 5 live results, never fewer.
-
----
-
-## GDPR Compliance
-
-Prism MCP provides the **technical controls** required for GDPR data governance. Here's how each feature maps to the regulation:
 
 ### Article 17 — Right to Erasure ("Right to be Forgotten")
 
