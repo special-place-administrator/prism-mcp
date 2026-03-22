@@ -14,7 +14,7 @@
 
 ## Table of Contents
 
-- [What's New (v2.5.0)](#whats-new-in-v250--enterprise-memory-)
+- [What's New (v2.5.0)](#whats-new-in-v250---enterprise-memory-)
 - [How Prism Compares](#how-prism-compares)
 - [Quick Start](#quick-start-zero-config--local-mode)
 - [Mind Palace Dashboard](#-the-mind-palace-dashboard)
@@ -198,7 +198,7 @@ Then add to your MCP config:
 }
 ```
 
-### Restart your MCP client. That's it — all tools are now available.
+**Restart your MCP client. That's it — all tools are now available.**
 
 ---
 
