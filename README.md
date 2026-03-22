@@ -14,7 +14,7 @@
 
 ## Table of Contents
 
-- [What's New (v2.5.0)](#whats-new-in-v250--enterprise-memory-️)
+- [What's New (v2.5.0)](#whats-new-in-v250---enterprise-memory-)
 - [How Prism Compares](#how-prism-compares)
 - [Quick Start](#quick-start-zero-config--local-mode)
 - [Mind Palace Dashboard](#-the-mind-palace-dashboard)
@@ -557,6 +557,7 @@ For the best experience, configure your AI coding assistant to **automatically c
 Add this rule to your project's `.clauderules` or `CLAUDE.md`:
 
 ```markdown
+
 ## Prism MCP Memory Auto-Load (CRITICAL)
 At the start of every new session, you MUST call `session_load_context`
 at the `standard` level for these projects:
@@ -574,6 +575,7 @@ Do NOT skip this step.
 Add this rule to your `~/.gemini/GEMINI.md` global rules file:
 
 ```markdown
+
 ## Prism MCP Memory Auto-Load (CRITICAL)
 **At the start of every new session**, immediately after displaying
 the startup block, you MUST call `session_load_context` (via the
@@ -691,6 +693,8 @@ Every `session_save_ledger` and `session_save_handoff` automatically extracts ke
 | **By category** | `category: "debugging"` | Forget debugging entries only |
 | **By age** | `older_than_days: 30` | Forget entries older than 30 days |
 | **Dry run** | `dry_run: true` | Preview what would be deleted |
+
+## GDPR Compliance
 
 ### GDPR-Compliant Deletion
 
