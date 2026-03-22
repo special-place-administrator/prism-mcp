@@ -693,6 +693,43 @@ Prism supports surgical, per-entry deletion for GDPR Article 17 compliance:
 
 ---
 
+## GDPR Compliance
+
+Prism MCP provides the **technical controls** required for GDPR data governance. Here's how each feature maps to the regulation:
+
+### Article 17 — Right to Erasure ("Right to be Forgotten")
+
+| Requirement | How Prism Satisfies It |
+|-------------|----------------------|
+| **Individual deletion** | `session_forget_memory` operates on a single `memory_id` — the data subject can request deletion of *specific* memories, not just bulk wipes. |
+| **Soft delete (audit trail)** | `deleted_at` + `deleted_reason` columns prove *when* and *why* data was deleted — required for SOC2 audit logs. |
+| **Hard delete (full erasure)** | `hard_delete: true` physically removes the row from the database. No tombstone, no trace. True erasure as required by Article 17(1). |
+| **Justification logging** | The `reason` parameter captures the GDPR justification (e.g., `"User requested data deletion"`, `"Data retention policy expired"`). |
+
+### Article 25 — Data Protection by Design and by Default
+
+| Requirement | How Prism Satisfies It |
+|-------------|----------------------|
+| **Ownership guards** | `softDeleteLedger()` and `hardDeleteLedger()` verify `user_id` before executing. User A cannot delete User B's data. |
+| **Database-level filtering** | `deleted_at IS NULL` is inside the SQL `WHERE` clause, *before* `LIMIT`. Soft-deleted data never leaks into search results — not even accidentally. |
+| **Default = safe** | The system defaults to soft delete (reversible). Hard delete requires an explicit `hard_delete: true` flag — preventing accidental permanent data loss. |
+| **Multi-tenant isolation** | `PRISM_USER_ID` environment variable ensures all operations are scoped to a single tenant. |
+
+### Coverage Summary
+
+| GDPR Right | Status | Implementation |
+|-----------|--------|----------------|
+| Right to Erasure (Art. 17) | ✅ Implemented | `session_forget_memory` (soft + hard delete) |
+| Data Protection by Design (Art. 25) | ✅ Implemented | Ownership guards, DB-level filtering, safe defaults |
+| Audit Trail | ✅ Implemented | `deleted_at` + `deleted_reason` columns |
+| User Isolation | ✅ Implemented | `user_id` verification on all delete operations |
+| Right to Portability (Art. 20) | ⬜ Roadmap | `session_export_memory` (planned) |
+| Consent Management | ➖ Out of scope | Application-layer responsibility |
+
+> **Note:** No software is "GDPR certified" on its own — GDPR is an organizational compliance framework. Prism provides the technical controls that a DPO (Data Protection Officer) needs to satisfy the data deletion and privacy-by-design requirements.
+
+---
+
 ## Supabase Setup (Cloud Mode)
 
 <details>
