@@ -1,6 +1,6 @@
 {
   "name": "prism-mcp-server",
-  "version": "2.5.2",
+  "version": "3.0.0",
   "mcpName": "io.github.dcostenco/prism-mcp",
   "description": "The Mind Palace for AI Agents — local-first MCP server with persistent memory (SQLite/Supabase), visual dashboard, time travel, multi-agent sync, Morning Briefings, reality drift detection, code mode templates, semantic vector search, and Brave Search + Gemini analysis. Zero-config local mode.",
   "module": "index.ts",
@@ -15,6 +15,10 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:load": "vitest run tests/load/",
+    "test:ci": "vitest run --reporter=junit --outputFile=test-results.xml",
     "test:mcp": "node ./test_cross_mcp.js"
   },
   "keywords": [
@@ -70,7 +74,8 @@
   "license": "MIT",
   "devDependencies": {
     "@types/bun": "latest",
-    "tsx": "^4.19.3"
+    "tsx": "^4.19.3",
+    "vitest": "^4.1.1"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

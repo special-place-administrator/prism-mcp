@@ -30,7 +30,8 @@ import {
   KnowledgeSearchResult,
   SemanticSearchResult,
   HistorySnapshot,
-  HealthStats,        // v2.2.0: Health check (fsck) aggregate type
+  HealthStats,             // v2.2.0: Health check (fsck) aggregate type
+  AgentRegistryEntry,      // v3.0: Agent Hivemind registry
 } from "./interface.js";
 import { debugLog } from "../utils/logger.js";
 
@@ -38,33 +39,28 @@ export class SupabaseStorage implements StorageBackend {
   // ─── Lifecycle ─────────────────────────────────────────────
 
   async initialize(): Promise<void> {
-    // Supabase is always ready — connection is stateless (REST API).
-    // The SUPABASE_URL and SUPABASE_KEY are validated at import time
-    // by supabaseApi.ts's guard clause.
     debugLog("[SupabaseStorage] Initialized (REST API, stateless)");
   }
 
   async close(): Promise<void> {
-    // No-op for Supabase — connections are stateless.
     debugLog("[SupabaseStorage] Closed (no-op for REST)");
   }
 
   // ─── Ledger Operations ─────────────────────────────────────
 
   async saveLedger(entry: LedgerEntry): Promise<unknown> {
-    // Direct mapping from sessionSaveLedgerHandler line 95
     const record = {
       project: entry.project,
       conversation_id: entry.conversation_id,
       summary: entry.summary,
       user_id: entry.user_id,
+      role: entry.role || "global",  // v3.0: include role
       todos: entry.todos || [],
       files_changed: entry.files_changed || [],
       decisions: entry.decisions || [],
       keywords: entry.keywords || [],
       ...(entry.is_rollup !== undefined && { is_rollup: entry.is_rollup }),
       ...(entry.rollup_count !== undefined && { rollup_count: entry.rollup_count }),
-      // Compaction handler also sets title, agent_name for rollup entries
       ...(entry.is_rollup && {
         title: `Session Rollup (${entry.rollup_count || 0} entries)`,
         agent_name: "prism-compactor",
@@ -75,61 +71,36 @@ export class SupabaseStorage implements StorageBackend {
   }
 
   async patchLedger(id: string, data: Record<string, unknown>): Promise<void> {
-    // Direct mapping from sessionSaveLedgerHandler line 115 (embedding patch)
-    // and compactionHandler line 292 (archive patch)
     await supabasePatch("session_ledger", data, { id: `eq.${id}` });
   }
 
   async getLedgerEntries(params: Record<string, string>): Promise<unknown[]> {
-    // Direct mapping from:
-    //   - compactionHandler line 143 (count entries for project)
-    //   - compactionHandler line 211 (fetch oldest entries)
-    //   - backfillEmbeddingsHandler line 700 (find missing embeddings)
-    //   - knowledgeForgetHandler line 479 (dry run count)
     const result = await supabaseGet("session_ledger", params);
     return Array.isArray(result) ? result : [];
   }
 
   async deleteLedger(params: Record<string, string>): Promise<unknown[]> {
-    // Direct mapping from knowledgeForgetHandler line 482
     const result = await supabaseDelete("session_ledger", params);
     return Array.isArray(result) ? result : [];
   }
 
   // ─── Phase 2: GDPR-Compliant Memory Deletion ──────────────
-  //
-  // These methods are SURGICAL — they operate on a single entry by ID.
-  // They MUST verify user_id ownership to prevent cross-user deletion.
-  //
-  // softDeleteLedger: Sets deleted_at + deleted_reason. Entry stays in
-  //   DB for audit trail. Supabase RPCs and TypeScript queries filter
-  //   it out via "WHERE deleted_at IS NULL". Reversible.
-  //
-  // hardDeleteLedger: Physical DELETE. Irreversible. For GDPR Article 17
-  //   "right to erasure" when the audit trail must also be removed.
 
   async softDeleteLedger(id: string, userId: string, reason?: string): Promise<void> {
-    // PATCH (not DELETE): sets tombstone fields while preserving the row.
-    // The deleted_at timestamp is set server-side for consistency.
-    // deleted_reason captures the GDPR justification (e.g., "User requested",
-    // "Data retention policy", "GDPR Article 17 request").
     await supabasePatch("session_ledger", {
       deleted_at: new Date().toISOString(),
       deleted_reason: reason || null,
     }, {
       id: `eq.${id}`,
-      user_id: `eq.${userId}`,  // Ownership guard — prevents cross-user deletion
+      user_id: `eq.${userId}`,
     });
     debugLog(`[SupabaseStorage] Soft-deleted ledger entry ${id} (reason: ${reason || "none"})`);
   }
 
   async hardDeleteLedger(id: string, userId: string): Promise<void> {
-    // Physical DELETE — row is permanently removed from the database.
-    // This is irreversible. The FTS5 index (if any) is cleaned up by
-    // Supabase's built-in trigger handling.
     await supabaseDelete("session_ledger", {
       id: `eq.${id}`,
-      user_id: `eq.${userId}`,  // Ownership guard
+      user_id: `eq.${userId}`,
     });
     debugLog(`[SupabaseStorage] Hard-deleted ledger entry ${id}`);
   }
@@ -140,8 +111,6 @@ export class SupabaseStorage implements StorageBackend {
     handoff: HandoffEntry,
     expectedVersion?: number | null
   ): Promise<SaveHandoffResult> {
-    // Direct mapping from sessionSaveHandoffHandler line 214
-    // Calls the save_handoff_with_version RPC for OCC
     const result = await supabaseRpc("save_handoff_with_version", {
       p_project: handoff.project,
       p_expected_version: expectedVersion ?? null,
@@ -152,6 +121,7 @@ export class SupabaseStorage implements StorageBackend {
       p_key_context: handoff.key_context ?? null,
       p_active_branch: handoff.active_branch ?? null,
       p_user_id: handoff.user_id,
+      p_role: handoff.role || "global",  // v3.0: pass role to RPC
     });
 
     const data = Array.isArray(result) ? result[0] : result;
@@ -170,7 +140,6 @@ export class SupabaseStorage implements StorageBackend {
   }
 
   async deleteHandoff(project: string, userId: string): Promise<void> {
-    // Direct mapping from knowledgeForgetHandler line 486
     await supabaseDelete("session_handoffs", {
       project: `eq.${project}`,
       user_id: `eq.${userId}`,
@@ -180,13 +149,14 @@ export class SupabaseStorage implements StorageBackend {
   async loadContext(
     project: string,
     level: string,
-    userId: string
+    userId: string,
+    role?: string  // v3.0: optional role filter
   ): Promise<ContextResult> {
-    // Direct mapping from sessionLoadContextHandler line 330
     const result = await supabaseRpc("get_session_context", {
       p_project: project,
       p_level: level,
       p_user_id: userId,
+      p_role: role || "global",  // v3.0: pass role to RPC
     });
 
     const data = Array.isArray(result) ? result[0] : result;
@@ -202,8 +172,8 @@ export class SupabaseStorage implements StorageBackend {
     queryText?: string | null;
     limit: number;
     userId: string;
+    role?: string | null;  // v3.0: optional role filter
   }): Promise<KnowledgeSearchResult | null> {
-    // Direct mapping from knowledgeSearchHandler line 388
     const result = await supabaseRpc("search_knowledge", {
       p_project: params.project || null,
       p_keywords: params.keywords,
@@ -228,8 +198,8 @@ export class SupabaseStorage implements StorageBackend {
     limit: number;
     similarityThreshold: number;
     userId: string;
+    role?: string | null;  // v3.0: optional role filter
   }): Promise<SemanticSearchResult[]> {
-    // Direct mapping from sessionSearchMemoryHandler line 583
     const result = await supabaseRpc("semantic_search_ledger", {
       p_query_embedding: params.queryEmbedding,
       p_project: params.project || null,
@@ -248,7 +218,6 @@ export class SupabaseStorage implements StorageBackend {
     keepRecent: number,
     userId: string
   ): Promise<Array<{ project: string; total_entries: number; to_compact: number }>> {
-    // Direct mapping from compactionHandler line 165
     const result = await supabaseRpc("get_compaction_candidates", {
       p_threshold: threshold,
       p_keep_recent: keepRecent,
@@ -292,115 +261,134 @@ export class SupabaseStorage implements StorageBackend {
       order: "project.asc",
     });
     const rows = Array.isArray(data) ? data : [];
-    // Deduplicate on the client side since Supabase doesn't support DISTINCT via REST
     return [...new Set(rows.map((r: any) => r.project as string))];
   }
 
   // ─── v2.2.0 Health Check (fsck) ─────────────────────────────
 
-  /**
-   * Gather raw health statistics via Supabase REST API.
-   *
-   * Supabase REST (PostgREST) doesn't support complex JOINs,
-   * so we fetch raw data and let healthCheck.ts do the analysis
-   * in pure JS — same approach as SQLite for consistency.
-   */
   async getHealthStats(userId: string): Promise<HealthStats> {
-
-    // ── Check 1: Entries missing embeddings ────────────────────
-    // Fetch active entries where embedding column is null.
-    // PostgREST filter: archived_at=is.null AND embedding=is.null
     const missingData = await supabaseGet("session_ledger", {
-      select: "id",                    // only need count
-      user_id: `eq.${userId}`,          // scope to this user
-      archived_at: "is.null",           // only active entries
-      embedding: "is.null",             // missing embedding
+      select: "id",
+      user_id: `eq.${userId}`,
+      archived_at: "is.null",
+      embedding: "is.null",
     });
-    // Count the returned rows (PostgREST returns array)
     const missingEmbeddings = Array.isArray(missingData) ? missingData.length : 0;
 
-    // ── Check 2: All active summaries for JS duplicate detection ─
-    // Pull id + project + summary so healthCheck.ts can run
-    // Jaccard similarity comparison in-memory.
     const summData = await supabaseGet("session_ledger", {
-      select: "id,project,summary",     // minimal columns needed
-      user_id: `eq.${userId}`,          // scope to this user
-      archived_at: "is.null",           // only active entries
+      select: "id,project,summary",
+      user_id: `eq.${userId}`,
+      archived_at: "is.null",
     });
-    // Map to typed array for the health check engine
     const activeLedgerSummaries = (Array.isArray(summData) ? summData : []).map(
       (r: any) => ({
-        id: r.id as string,             // unique entry ID
-        project: r.project as string,   // project name
-        summary: r.summary as string,   // text for dupe comparison
+        id: r.id as string,
+        project: r.project as string,
+        summary: r.summary as string,
       })
     );
 
-    // ── Check 3: Find orphaned handoffs ──────────────────────────
-    // Fetch all handoff projects, then all ledger projects.
-    // Difference = orphaned handoffs (handoff but no ledger entries).
     const handoffData = await supabaseGet("session_handoffs", {
-      select: "project",               // only need project names
-      user_id: `eq.${userId}`,          // scope to this user
+      select: "project",
+      user_id: `eq.${userId}`,
     });
-    const handoffProjects = new Set(         // set for O(1) lookup
+    const handoffProjects = new Set(
       (Array.isArray(handoffData) ? handoffData : [])
         .map((r: any) => r.project as string)
     );
     const ledgerData = await supabaseGet("session_ledger", {
-      select: "project",               // only need project names
-      user_id: `eq.${userId}`,          // scope to this user
-      archived_at: "is.null",           // only active entries
+      select: "project",
+      user_id: `eq.${userId}`,
+      archived_at: "is.null",
     });
-    const ledgerProjects = new Set(          // projects that have entries
+    const ledgerProjects = new Set(
       (Array.isArray(ledgerData) ? ledgerData : [])
         .map((r: any) => r.project as string)
     );
-    // Orphaned = in handoffs but NOT in ledger
     const orphanedHandoffs = [...handoffProjects]
-      .filter(p => !ledgerProjects.has(p))   // keep only orphans
-      .map(project => ({ project }));         // wrap in object
+      .filter(p => !ledgerProjects.has(p))
+      .map(project => ({ project }));
 
-    // ── Check 4: Count stale rollups ─────────────────────────────
-    // PostgREST can't do self-joins. Fetch rollups and archived
-    // entries separately, then compute in JS.
     const rollupData = await supabaseGet("session_ledger", {
-      select: "id,project",            // rollup ID and project
-      user_id: `eq.${userId}`,          // scope to this user
-      is_rollup: "eq.true",             // only rollup entries
-      archived_at: "is.null",           // still active
+      select: "id,project",
+      user_id: `eq.${userId}`,
+      is_rollup: "eq.true",
+      archived_at: "is.null",
     });
     const archivedData = await supabaseGet("session_ledger", {
-      select: "project",               // just need project names
-      user_id: `eq.${userId}`,          // scope to this user
-      "archived_at": "not.is.null",     // only archived entries
+      select: "project",
+      user_id: `eq.${userId}`,
+      "archived_at": "not.is.null",
     });
-    // Build a set of projects that have archived entries
     const archivedProjects = new Set(
       (Array.isArray(archivedData) ? archivedData : [])
         .map((r: any) => r.project as string)
     );
-    // Stale = rollup exists but project has no archived originals
     const rollups = Array.isArray(rollupData) ? rollupData : [];
     const staleRollups = rollups.filter(
-      (r: any) => !archivedProjects.has(r.project)  // no originals
+      (r: any) => !archivedProjects.has(r.project)
     ).length;
 
-    // ── Totals ───────────────────────────────────────────────────
-    // Reuse data already fetched above to avoid extra API calls
     const totalActiveEntries = activeLedgerSummaries.length;
     const totalHandoffs = handoffProjects.size;
     const totalRollups = rollups.length;
 
-    // ── Return raw health stats for the JS engine ────────────────
     return {
-      missingEmbeddings,     // entries needing embedding repair
-      activeLedgerSummaries, // raw summaries for JS dupe detection
-      orphanedHandoffs,      // projects with handoff but no ledger
-      staleRollups,          // rollups with no archived originals
-      totalActiveEntries,    // grand total of active entries
-      totalHandoffs,         // grand total of handoff records
-      totalRollups,          // grand total of rollup entries
+      missingEmbeddings,
+      activeLedgerSummaries,
+      orphanedHandoffs,
+      staleRollups,
+      totalActiveEntries,
+      totalHandoffs,
+      totalRollups,
     };
+  }
+
+  // ─── v3.0: Agent Registry (Hivemind) ───────────────────────
+  // Supabase users need to run the 017_agent_hivemind.sql migration
+
+  async registerAgent(entry: AgentRegistryEntry): Promise<AgentRegistryEntry> {
+    const record = {
+      project: entry.project,
+      user_id: entry.user_id,
+      role: entry.role,
+      agent_name: entry.agent_name ?? null,
+      status: entry.status || "active",
+      current_task: entry.current_task ?? null,
+    };
+    const result = await supabasePost("agent_registry", record);
+    const data = Array.isArray(result) ? result[0] : result;
+    return { ...entry, id: data?.id, status: entry.status || "active" };
+  }
+
+  async heartbeatAgent(project: string, userId: string, role: string, currentTask?: string): Promise<void> {
+    const patchData: Record<string, unknown> = {
+      last_heartbeat: new Date().toISOString(),
+    };
+    if (currentTask !== undefined) {
+      patchData.current_task = currentTask;
+    }
+    await supabasePatch("agent_registry", patchData, {
+      project: `eq.${project}`,
+      user_id: `eq.${userId}`,
+      role: `eq.${role}`,
+    });
+  }
+
+  async listTeam(project: string, userId: string, _staleMinutes: number = 30): Promise<AgentRegistryEntry[]> {
+    const data = await supabaseGet("agent_registry", {
+      project: `eq.${project}`,
+      user_id: `eq.${userId}`,
+      order: "last_heartbeat.desc",
+    });
+    return (Array.isArray(data) ? data : []) as AgentRegistryEntry[];
+  }
+
+  async deregisterAgent(project: string, userId: string, role: string): Promise<void> {
+    await supabaseDelete("agent_registry", {
+      project: `eq.${project}`,
+      user_id: `eq.${userId}`,
+      role: `eq.${role}`,
+    });
   }
 }

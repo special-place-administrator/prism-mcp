@@ -33,6 +33,11 @@ export interface LedgerEntry {
   conversation_id: string;
   user_id: string;
 
+  // ─── v3.0: Agent Hivemind — Role Identity ──────────────────
+  // Which agent role created this entry. Defaults to 'global'
+  // for backward compatibility with pre-v3.0 entries.
+  role?: string; // 'global' | 'dev' | 'qa' | 'pm' | 'lead' | custom (defaults to 'global')
+
   // Content
   summary: string;
   todos?: string[];
@@ -67,6 +72,11 @@ export interface LedgerEntry {
 export interface HandoffEntry {
   project: string;
   user_id: string;
+
+  // ─── v3.0: Agent Hivemind — Role Identity ──────────────────
+  // Role-scoped handoff state. Each role gets its own handoff
+  // within a project. Defaults to 'global' for backward compat.
+  role?: string; // 'global' | 'dev' | 'qa' | 'pm' | 'lead' | custom (defaults to 'global')
 
   // Context
   last_summary?: string | null;
@@ -116,6 +126,25 @@ export interface SemanticSearchResult {
   session_date?: string;
   decisions?: string[];
   files_changed?: string[];
+}
+
+// ─── v3.0: Agent Registry Types ──────────────────────────────
+
+/**
+ * Tracks an active agent in the Hivemind coordination registry.
+ * Agents register on startup, heartbeat periodically, and are
+ * auto-pruned when stale (>30 min without heartbeat).
+ */
+export interface AgentRegistryEntry {
+  id?: string;
+  project: string;
+  user_id: string;
+  role: string;
+  agent_name?: string | null;
+  status: "active" | "idle" | "shutdown";
+  current_task?: string | null;
+  last_heartbeat?: string;
+  created_at?: string;
 }
 
 /**
@@ -258,8 +287,9 @@ export interface StorageBackend {
   /**
    * Load context for a project at the requested depth level.
    * Levels: "quick" | "standard" | "deep"
+   * @param role - Optional agent role filter (defaults to 'global')
    */
-  loadContext(project: string, level: string, userId: string): Promise<ContextResult>;
+  loadContext(project: string, level: string, userId: string, role?: string): Promise<ContextResult>;
 
   // ─── Search Operations ─────────────────────────────────────
 
@@ -273,6 +303,7 @@ export interface StorageBackend {
     queryText?: string | null;
     limit: number;
     userId: string;
+    role?: string | null; // v3.0: filter by agent role
   }): Promise<KnowledgeSearchResult | null>;
 
   /**
@@ -285,6 +316,7 @@ export interface StorageBackend {
     limit: number;
     similarityThreshold: number;
     userId: string;
+    role?: string | null; // v3.0: filter by agent role
   }): Promise<SemanticSearchResult[]>;
 
   // ─── Compaction ────────────────────────────────────────────
@@ -329,4 +361,28 @@ export interface StorageBackend {
    * smart analysis — this just runs simple SQL queries.
    */
   getHealthStats(userId: string): Promise<HealthStats>;
+
+  // ─── v3.0: Agent Registry Operations ──────────────────────────
+
+  /**
+   * Register an agent (upsert on project + user_id + role).
+   * If already registered, updates agent_name, status, and current_task.
+   */
+  registerAgent(entry: AgentRegistryEntry): Promise<AgentRegistryEntry>;
+
+  /**
+   * Update heartbeat timestamp and optionally current_task.
+   */
+  heartbeatAgent(project: string, userId: string, role: string, currentTask?: string): Promise<void>;
+
+  /**
+   * List all agents on a project. Auto-prunes agents with
+   * heartbeats older than staleMinutes (default 30).
+   */
+  listTeam(project: string, userId: string, staleMinutes?: number): Promise<AgentRegistryEntry[]>;
+
+  /**
+   * Remove an agent from the registry.
+   */
+  deregisterAgent(project: string, userId: string, role: string): Promise<void>;
 }

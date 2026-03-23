@@ -36,3 +36,9 @@ export { sessionSaveLedgerHandler, sessionSaveHandoffHandler, sessionLoadContext
 // more complex than the other session memory handlers (chunked Gemini
 // API calls, recursive summarization, etc.).
 export { compactLedgerHandler } from "./compactionHandler.js";
+
+// ── Agent Registry Tools (v3.0 — Hivemind, Optional) ──
+// These tools are only registered when PRISM_ENABLE_HIVEMIND=true.
+// server.ts handles the conditional registration.
+export { AGENT_REGISTRY_TOOLS, getRoleIcon } from "./agentRegistryDefinitions.js";
+export { agentRegisterHandler, agentHeartbeatHandler, agentListTeamHandler } from "./agentRegistryHandlers.js";

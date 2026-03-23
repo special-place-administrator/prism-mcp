@@ -39,6 +39,10 @@ export const SESSION_SAVE_LEDGER_TOOL: Tool = {
         items: { type: "string" },
         description: "Optional list of key decisions made during this session.",
       },
+      role: {
+        type: "string",
+        description: "v3.0: Agent role for Hivemind scoping (e.g., 'dev', 'qa', 'pm'). Defaults to 'global'.",
+      },
     },
     required: ["project", "conversation_id", "summary"],
   },
@@ -92,6 +96,10 @@ export const SESSION_SAVE_HANDOFF_TOOL: Tool = {
         type: "string",
         description: "Free-form critical context the next session needs to know.",
       },
+      role: {
+        type: "string",
+        description: "v3.0: Agent role for Hivemind scoping (e.g., 'dev', 'qa', 'pm'). Defaults to 'global'.",
+      },
     },
     required: ["project"],
   },
@@ -119,6 +127,10 @@ export const SESSION_LOAD_CONTEXT_TOOL: Tool = {
         type: "string",
         enum: ["quick", "standard", "deep"],
         description: "How much context to load: 'quick' (just TODOs), 'standard' (recommended — includes recent summaries), or 'deep' (full history). Default: standard.",
+      },
+      role: {
+        type: "string",
+        description: "v3.0: Agent role for Hivemind scoping (e.g., 'dev', 'qa', 'pm'). Defaults to 'global'. When set, also injects active_team roster.",
       },
     },
     required: ["project"],
@@ -389,6 +401,7 @@ export function isSessionSaveLedgerArgs(
   todos?: string[];
   files_changed?: string[];
   decisions?: string[];
+  role?: string;  // v3.0: Hivemind
 } {
   return (
     typeof args === "object" &&
@@ -413,6 +426,7 @@ export function isSessionSaveHandoffArgs(
   active_branch?: string;
   last_summary?: string;
   key_context?: string;
+  role?: string;  // v3.0: Hivemind
 } {
   return (
     typeof args === "object" &&
@@ -456,7 +470,7 @@ export function isBackfillEmbeddingsArgs(
 
 export function isSessionLoadContextArgs(
   args: unknown
-): args is { project: string; level?: "quick" | "standard" | "deep" } {
+): args is { project: string; level?: "quick" | "standard" | "deep"; role?: string } {
   return (
     typeof args === "object" &&
     args !== null &&

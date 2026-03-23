@@ -1,0 +1,200 @@
+/**
+ * Dashboard API Tests — Settings & Team Endpoints
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * SCOPE:
+ *   Tests the dashboard HTTP server API endpoints through their
+ *   underlying storage methods:
+ *   1. GET /api/settings → storage.getAllSettings()
+ *   2. POST /api/settings → storage.setSetting(key, value)
+ *   3. GET /api/team → storage.listTeam(project, userId)
+ *   4. Error handling — non-existent keys, empty projects
+ *
+ * APPROACH:
+ *   We test the storage layer directly (the "model" in MVC terms)
+ *   rather than spinning up an HTTP server. This is faster, more
+ *   reliable, and avoids port conflicts. The HTTP routing is thin
+ *   enough that unit testing the storage functions provides
+ *   sufficient confidence.
+ *
+ * API SIGNATURES:
+ *   - storage.setSetting(key: string, value: string): Promise<void>
+ *   - storage.getSetting(key: string): Promise<string | null>
+ *   - storage.getAllSettings(): Promise<Record<string, string>>
+ *   - storage.registerAgent(entry: AgentRegistryEntry): Promise<AgentRegistryEntry>
+ *   - storage.listTeam(project, userId, staleMinutes?): Promise<AgentRegistryEntry[]>
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import {
+  createTestDb,
+  TEST_PROJECT,
+  TEST_USER_ID,
+  SAMPLE_SETTINGS,
+  SAMPLE_TEAM,
+} from "../helpers/fixtures.js";
+
+// ─── Shared test state ───────────────────────────────────────────
+let storage: any;
+let cleanup: () => void;
+
+beforeAll(async () => {
+  const testDb = await createTestDb("dashboard-api");
+  storage = testDb.storage;
+  cleanup = testDb.cleanup;
+}, 15_000);
+
+afterAll(() => {
+  cleanup();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 1. SETTINGS API — GET/POST /api/settings
+// ═══════════════════════════════════════════════════════════════════
+
+describe("Settings API (Storage Layer)", () => {
+  /**
+   * Tests the initial state — no settings saved yet.
+   * getAllSettings() should return an empty object, not throw.
+   */
+  it("should return empty settings initially", async () => {
+    const settings = await storage.getAllSettings();
+    expect(settings).toBeDefined();
+    expect(typeof settings).toBe("object");
+    expect(Object.keys(settings).length).toBe(0);
+  });
+
+  /**
+   * Tests saving settings one by one (simulating individual POST calls).
+   * Each POST to /api/settings sends { key, value } in the body.
+   */
+  it("should save settings individually", async () => {
+    for (const [key, value] of Object.entries(SAMPLE_SETTINGS)) {
+      await storage.setSetting(key, value);
+    }
+
+    // Verify each one was saved
+    expect(await storage.getSetting("auto_capture")).toBe("true");
+    expect(await storage.getSetting("dashboard_theme")).toBe("dark");
+    expect(await storage.getSetting("default_context_depth")).toBe("standard");
+    expect(await storage.getSetting("hivemind_enabled")).toBe("false");
+  });
+
+  /**
+   * Tests retrieving all settings at once (the GET /api/settings flow).
+   * The dashboard UI fetches all settings on modal open.
+   */
+  it("should retrieve all settings in one call", async () => {
+    const all = await storage.getAllSettings();
+    expect(Object.keys(all).length).toBe(4);
+    expect(all.auto_capture).toBe("true");
+    expect(all.dashboard_theme).toBe("dark");
+  });
+
+  /**
+   * Tests updating an existing setting.
+   * The Settings modal toggles are implemented as POST with the
+   * same key and a new value — triggers ON CONFLICT UPDATE.
+   */
+  it("should update existing settings via upsert", async () => {
+    // User toggles auto-capture off
+    await storage.setSetting("auto_capture", "false");
+    // User changes theme to midnight
+    await storage.setSetting("dashboard_theme", "midnight");
+
+    expect(await storage.getSetting("auto_capture")).toBe("false");
+    expect(await storage.getSetting("dashboard_theme")).toBe("midnight");
+
+    // Other settings should be unchanged
+    expect(await storage.getSetting("default_context_depth")).toBe("standard");
+  });
+
+  /**
+   * Tests that boolean settings are stored as strings.
+   * SQLite doesn't have a native boolean type — we use "true"/"false".
+   * The dashboard UI must handle this string comparison.
+   */
+  it("should handle boolean values as strings", async () => {
+    await storage.setSetting("hivemind_enabled", "true");
+    const value = await storage.getSetting("hivemind_enabled");
+
+    // Value is a string, not a boolean
+    expect(typeof value).toBe("string");
+    expect(value).toBe("true");
+    expect(value === "true").toBe(true); // Dashboard comparison pattern
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 2. TEAM API — GET /api/team?project=
+// ═══════════════════════════════════════════════════════════════════
+
+describe("Team API (Storage Layer)", () => {
+  /**
+   * Tests the initial state — no agents registered yet.
+   */
+  it("should return empty team for new project", async () => {
+    const team = await storage.listTeam("nonexistent-project", TEST_USER_ID);
+    expect(team).toEqual([]);
+  });
+
+  /**
+   * Tests registering a full team and listing them.
+   * Simulates the scenario where PM, Dev, QA, and Security agents
+   * are all actively working on the same project.
+   *
+   * API: registerAgent(entry: AgentRegistryEntry) — single object
+   */
+  it("should return full team roster after registration", async () => {
+    // Register all 4 agents from the fixture
+    for (const agent of SAMPLE_TEAM) {
+      await storage.registerAgent({
+        ...agent,
+        user_id: TEST_USER_ID,
+      });
+    }
+
+    const team = await storage.listTeam(TEST_PROJECT, TEST_USER_ID);
+
+    // Should have exactly 4 team members
+    expect(team.length).toBe(4);
+
+    // Verify each role is represented
+    const roles = team.map((a: any) => a.role).sort();
+    expect(roles).toEqual(["dev", "pm", "qa", "security"]);
+  });
+
+  /**
+   * Tests that team listings include the current_task field.
+   * The Hivemind Radar widget displays what each agent is doing.
+   */
+  it("should include current_task in team listing", async () => {
+    const team = await storage.listTeam(TEST_PROJECT, TEST_USER_ID);
+    const dev = team.find((a: any) => a.role === "dev");
+    expect(dev.current_task).toBe("Implementing auth middleware");
+  });
+
+  /**
+   * Tests that teams are project-scoped.
+   * Agents registered on project A should NOT appear on project B.
+   */
+  it("should isolate teams by project", async () => {
+    // Register an agent on a different project
+    await storage.registerAgent({
+      project: "other-project",
+      user_id: TEST_USER_ID,
+      role: "dev",
+      agent_name: "Other Dev",
+      current_task: "Working on other stuff",
+    });
+
+    // Original project should still only have 4 agents
+    const team = await storage.listTeam(TEST_PROJECT, TEST_USER_ID);
+    expect(team.length).toBe(4);
+
+    // Other project should have exactly 1
+    const otherTeam = await storage.listTeam("other-project", TEST_USER_ID);
+    expect(otherTeam.length).toBe(1);
+  });
+});

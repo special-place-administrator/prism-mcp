@@ -127,6 +127,16 @@ export const PRISM_CAPTURE_PORTS = (process.env.PRISM_CAPTURE_PORTS || "3000,300
 
 export const PRISM_DEBUG_LOGGING = process.env.PRISM_DEBUG_LOGGING === "true";
 
+// ─── v3.0: Agent Hivemind Feature Flag ───────────────────────
+// When enabled, registers 3 additional MCP tools for multi-agent
+// coordination: agent_register, agent_heartbeat, agent_list_team.
+// The role parameter on existing tools (session_save_ledger, etc.)
+// is always available regardless of this flag — adding a parameter
+// doesn't increase tool count.
+// Set PRISM_ENABLE_HIVEMIND=true to unlock the Agent Registry tools.
+
+export const PRISM_ENABLE_HIVEMIND = process.env.PRISM_ENABLE_HIVEMIND === "true";
+
 if (PRISM_AUTO_CAPTURE) {
   // Use console.error instead of debugLog here to prevent circular dependency
   if (PRISM_DEBUG_LOGGING) {

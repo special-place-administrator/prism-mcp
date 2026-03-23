@@ -14,7 +14,7 @@
 
 ## Table of Contents
 
-- [What's New (v2.5.0)](#whats-new-in-v250---enterprise-memory-)
+- [What's New (v3.0.0)](#whats-new-in-v300---agent-hivemind-)
 - [How Prism Compares](#how-prism-compares)
 - [Quick Start](#quick-start-zero-config--local-mode)
 - [Mind Palace Dashboard](#-the-mind-palace-dashboard)
@@ -37,7 +37,20 @@
 
 ---
 
-## What's New in v2.5.0 — Enterprise Memory 🏗️
+## What's New in v3.0.0 — Agent Hivemind 🐝
+
+| Feature | Description |
+|---|---|
+| 🐝 **Role-Scoped Memory** | Optional `role` parameter on ledger, handoff, and context loading — each agent role (dev, qa, pm, lead, security, ux) gets its own isolated memory lane within a project. Defaults to `'global'` for full backward compatibility. |
+| 👥 **Agent Registry** | New `agent_register`, `agent_heartbeat`, `agent_list_team` tools — agents announce their presence, pulse their status, and discover who else is working on the team. Stale agents are auto-pruned after 30 minutes. |
+| 🎯 **Team Roster Injection** | When loading context with a role, Prism automatically injects a "Team Roster" showing active teammates, their roles, current tasks, and last heartbeat — true multi-agent awareness without extra tool calls. |
+| ⚙️ **Dashboard Settings** | New Settings modal with runtime toggles (auto-capture, theme, context depth) backed by a persistent `system_settings` key-value store. Environment variables override DB settings for safety. |
+| 📡 **Hivemind Radar** | New dashboard widget showing active agents, their roles (with icons), current tasks, and heartbeat timestamps — a real-time team coordination dashboard. |
+| 🔒 **Conditional Tool Registration** | `PRISM_ENABLE_HIVEMIND` env var gates Hivemind tools — users who don't need multi-agent features keep the same lean tool count as v2.x. |
+| ✅ **Test Suite** | 58 tests across 4 suites (storage, tools, dashboard, load) with Vitest — includes concurrent write stress tests, role isolation verification, and 0.2ms/write performance benchmarks. |
+
+<details>
+<summary><strong>What's in v2.5.0 — Enterprise Memory 🏗️</strong></summary>
 
 | Feature | Description |
 |---|---|
@@ -45,6 +58,8 @@
 | 🛡️ **GDPR Memory Deletion (Phase 2)** | New `session_forget_memory` tool with soft-delete (tombstoning via `deleted_at`) and hard-delete. Ownership guards prevent cross-user deletion. `deleted_reason` column captures GDPR Article 17 justification. Top-K Hole solved by filtering inside SQL, not post-query (ensures we always return exactly K results, rather than returning fewer because deleted items were filtered out after the vector search). |
 | 🔗 **LangChain Integration (Phase 3)** | `PrismMemoryRetriever` and `PrismKnowledgeRetriever` — async-first `BaseRetriever` subclasses that wrap Prism MCP's traced search endpoints. Trace metadata flows automatically into `Document.metadata["trace"]` for LangSmith visibility. |
 | 🧩 **LangGraph Research Agent** | Full example in `examples/langgraph-agent/` — a 5-node agentic research loop with MCP bridge, persistent memory, and `EnsembleRetriever` hybrid search. |
+
+</details>
 
 <details>
 <summary><strong>What's in v2.5.1 — Version Sync & Embedding Safety</strong></summary>
@@ -927,6 +942,10 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 ## 🚀 Roadmap
 
 > **[View the full project board →](https://github.com/users/dcostenco/projects/1/views/1)**
+
+### ✅ v3.0 — Agent Hivemind (Shipped!)
+
+See [What's New in v3.0.0](#whats-new-in-v300---agent-hivemind-) above.
 
 ### 🚀 Future Ideas
 

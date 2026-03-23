@@ -68,7 +68,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
-import { SERVER_CONFIG, SESSION_MEMORY_ENABLED, PRISM_USER_ID } from "./config.js";
+import { SERVER_CONFIG, SESSION_MEMORY_ENABLED, PRISM_USER_ID, PRISM_ENABLE_HIVEMIND } from "./config.js";
 import { getSyncBus } from "./sync/factory.js";
 import type { SyncBus, SyncEvent } from "./sync/index.js";
 import { startDashboardServer } from "./dashboard/server.js";
@@ -139,6 +139,11 @@ import {
   sessionHealthCheckHandler,
   // ─── Phase 2: GDPR Memory Deletion handler ───
   sessionForgetMemoryHandler,
+  // ─── v3.0: Agent Hivemind tools ───
+  AGENT_REGISTRY_TOOLS,
+  agentRegisterHandler,
+  agentHeartbeatHandler,
+  agentListTeamHandler,
 } from "./tools/index.js";
 
 // ─── Dynamic Tool Registration ───────────────────────────────────
@@ -183,6 +188,8 @@ const SESSION_MEMORY_TOOLS: Tool[] = [
 const ALL_TOOLS: Tool[] = [
   ...BASE_TOOLS,
   ...SESSION_MEMORY_TOOLS,
+  // v3.0: Agent Hivemind tools — only when PRISM_ENABLE_HIVEMIND=true
+  ...(PRISM_ENABLE_HIVEMIND ? AGENT_REGISTRY_TOOLS : []),
 ];
 
 // ─── v0.4.0: Resource Subscription Tracking ──────────────────────
@@ -591,6 +598,23 @@ export function createServer() {
           if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
           return await sessionForgetMemoryHandler(args);
 
+        // ─── v3.0: Agent Hivemind Tools ───
+
+        case "agent_register":
+          if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured.");
+          if (!PRISM_ENABLE_HIVEMIND) throw new Error("Hivemind not enabled. Set PRISM_ENABLE_HIVEMIND=true.");
+          return await agentRegisterHandler(args);
+
+        case "agent_heartbeat":
+          if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured.");
+          if (!PRISM_ENABLE_HIVEMIND) throw new Error("Hivemind not enabled. Set PRISM_ENABLE_HIVEMIND=true.");
+          return await agentHeartbeatHandler(args);
+
+        case "agent_list_team":
+          if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured.");
+          if (!PRISM_ENABLE_HIVEMIND) throw new Error("Hivemind not enabled. Set PRISM_ENABLE_HIVEMIND=true.");
+          return await agentListTeamHandler(args);
+
         default:
           return {
             content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -638,7 +662,7 @@ export function createSandboxServer() {
 
   // Register all tool listings unconditionally
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [...BASE_TOOLS, ...SESSION_MEMORY_TOOLS],
+    tools: [...BASE_TOOLS, ...SESSION_MEMORY_TOOLS, ...AGENT_REGISTRY_TOOLS],
   }));
 
   // Register prompts listing so scanners see resume_session

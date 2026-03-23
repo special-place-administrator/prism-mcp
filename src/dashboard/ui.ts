@@ -28,7 +28,8 @@ export function renderDashboardHTML(version: string): string {
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
+    /* ─── Theme: Dark (Default) ─── */
+    :root, [data-theme="dark"] {
       --bg-primary: #0a0e1a;
       --bg-secondary: #111827;
       --bg-glass: rgba(17, 24, 39, 0.6);
@@ -48,6 +49,44 @@ export function renderDashboardHTML(version: string): string {
       --radius-sm: 10px;
       --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
       --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    /* ─── Theme: Midnight — deeper blacks, blue-shifted accents ─── */
+    [data-theme="midnight"] {
+      --bg-primary: #020617;
+      --bg-secondary: #0f172a;
+      --bg-glass: rgba(2, 6, 23, 0.7);
+      --border-glass: rgba(59, 130, 246, 0.15);
+      --border-glow: rgba(59, 130, 246, 0.35);
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted: #475569;
+      --accent-purple: #818cf8;
+      --accent-blue: #60a5fa;
+      --accent-cyan: #22d3ee;
+      --accent-green: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-rose: #fb7185;
+      --gradient-hero: linear-gradient(135deg, #818cf8 0%, #60a5fa 50%, #22d3ee 100%);
+    }
+
+    /* ─── Theme: Purple Haze — warm violet tones ─── */
+    [data-theme="purple"] {
+      --bg-primary: #0c0515;
+      --bg-secondary: #1a0a2e;
+      --bg-glass: rgba(26, 10, 46, 0.65);
+      --border-glass: rgba(168, 85, 247, 0.2);
+      --border-glow: rgba(168, 85, 247, 0.4);
+      --text-primary: #f5f3ff;
+      --text-secondary: #c4b5fd;
+      --text-muted: #7c3aed;
+      --accent-purple: #a855f7;
+      --accent-blue: #7c3aed;
+      --accent-cyan: #c084fc;
+      --accent-green: #a78bfa;
+      --accent-amber: #e879f9;
+      --accent-rose: #f472b6;
+      --gradient-hero: linear-gradient(135deg, #a855f7 0%, #7c3aed 50%, #c084fc 100%);
     }
 
     body {
@@ -271,6 +310,87 @@ export function renderDashboardHTML(version: string): string {
       transition: color 0.2s;
     }
     .refresh-btn:hover { color: var(--accent-purple); }
+
+    /* ─── Settings Modal (v3.0) ─── */
+    .settings-btn {
+      background: none; border: 1px solid var(--border-glass);
+      color: var(--text-secondary); cursor: pointer; font-size: 1.1rem;
+      padding: 0.4rem 0.7rem; border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+    .settings-btn:hover { border-color: var(--border-glow); color: var(--accent-purple); }
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; z-index: 100;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+      justify-content: center; align-items: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--bg-secondary); border: 1px solid var(--border-glow);
+      border-radius: var(--radius); padding: 2rem; width: 480px; max-width: 90vw;
+      max-height: 85vh; overflow-y: auto; position: relative;
+    }
+    .modal h2 { font-size: 1.1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    .modal-close {
+      position: absolute; top: 1rem; right: 1rem; background: none;
+      border: none; color: var(--text-muted); cursor: pointer; font-size: 1.25rem;
+    }
+    .modal-close:hover { color: var(--text-primary); }
+    .setting-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.75rem 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: 0.85rem; color: var(--text-secondary); }
+    .setting-desc { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.2rem; }
+    .toggle {
+      position: relative; width: 44px; height: 24px;
+      background: rgba(100,116,139,0.3); border-radius: 12px;
+      cursor: pointer; transition: background 0.3s; flex-shrink: 0;
+    }
+    .toggle.active { background: var(--accent-purple); }
+    .toggle::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: white; transition: transform 0.3s;
+    }
+    .toggle.active::after { transform: translateX(20px); }
+    .setting-select {
+      background: var(--bg-primary); border: 1px solid var(--border-glass);
+      color: var(--text-primary); padding: 0.4rem 0.6rem;
+      border-radius: 6px; font-size: 0.8rem; font-family: var(--font-sans);
+    }
+    .setting-section {
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--accent-purple); margin: 1rem 0 0.5rem;
+    }
+    .setting-saved {
+      font-size: 0.75rem; color: var(--accent-green); opacity: 0;
+      transition: opacity 0.3s; margin-left: 0.5rem;
+    }
+    .setting-saved.show { opacity: 1; }
+    .boot-badge {
+      font-size: 0.6rem; padding: 0.15rem 0.5rem; border-radius: 4px;
+      background: rgba(245,158,11,0.15); color: var(--accent-amber);
+      font-weight: 600; text-transform: uppercase;
+    }
+
+    /* ─── Hivemind Radar (v3.0) ─── */
+    .team-list { list-style: none; padding: 0; }
+    .team-item {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.6rem 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 0.85rem;
+    }
+    .team-item:last-child { border-bottom: none; }
+    .team-role { font-weight: 600; color: var(--text-primary); min-width: 60px; }
+    .team-task { color: var(--text-secondary); flex: 1; }
+    .team-heartbeat { font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); }
+    .pulse-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--accent-green);
+      flex-shrink: 0; animation: pulseDot 2s ease-in-out infinite;
+    }
+    @keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
   </style>
 </head>
 <body>
@@ -287,6 +407,7 @@ export function renderDashboardHTML(version: string): string {
           <option value="">Loading projects...</option>
         </select>
         <button onclick="loadProject()">Inspect</button>
+        <button class="settings-btn" onclick="openSettings()" title="Settings">⚙️</button>
       </div>
     </header>
 
@@ -368,6 +489,83 @@ export function renderDashboardHTML(version: string): string {
           <div class="card-title"><span class="dot" style="background:var(--accent-amber)"></span> Session Ledger</div>
           <div class="timeline" id="ledgerTimeline"></div>
         </div>
+        </div>
+
+        <!-- Hivemind Radar (v3.0) -->
+        <div class="card" id="hivemindCard" style="display:none">
+          <div class="card-title">
+            <span class="dot" style="background:var(--accent-cyan)"></span>
+            Hivemind Radar 🐝
+            <button onclick="loadTeam()" class="refresh-btn">↻</button>
+          </div>
+          <ul class="team-list" id="teamList">
+            <li style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:1rem">
+              No active agents. Set PRISM_ENABLE_HIVEMIND=true to enable.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal (v3.0) -->
+    <div class="modal-overlay" id="settingsModal">
+      <div class="modal">
+        <button class="modal-close" onclick="closeSettings()">✕</button>
+        <h2>⚙️ Settings</h2>
+
+        <div class="setting-section">Runtime Settings</div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Auto-Capture HTML</div>
+            <div class="setting-desc">Capture local dev server UI on handoff save</div>
+          </div>
+          <div class="toggle" id="toggle-auto-capture" onclick="toggleSetting('auto_capture', this)"></div>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Dashboard Theme</div>
+            <div class="setting-desc">Visual theme for Mind Palace</div>
+          </div>
+          <select class="setting-select" id="select-theme" onchange="saveSetting('dashboard_theme', this.value)">
+            <option value="dark">Dark (Default)</option>
+            <option value="midnight">Midnight</option>
+            <option value="purple">Purple Haze</option>
+          </select>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Context Depth</div>
+            <div class="setting-desc">Default level for session_load_context</div>
+          </div>
+          <select class="setting-select" id="select-context-depth" onchange="saveSetting('default_context_depth', this.value)">
+            <option value="standard">Standard (~200 tokens)</option>
+            <option value="quick">Quick (~50 tokens)</option>
+            <option value="deep">Deep (~1000+ tokens)</option>
+          </select>
+        </div>
+
+        <div class="setting-section">Boot Settings <span class="boot-badge">Restart Required</span></div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Hivemind Mode</div>
+            <div class="setting-desc">Multi-agent coordination (PRISM_ENABLE_HIVEMIND)</div>
+          </div>
+          <div class="toggle" id="toggle-hivemind" onclick="toggleBootSetting('hivemind_enabled', this)"></div>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Storage Backend</div>
+            <div class="setting-desc">Set via PRISM_STORAGE env var</div>
+          </div>
+          <div style="font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono)" id="storageDisplay">local</div>
+        </div>
+
+        <span class="setting-saved" id="savedToast">Saved ✓</span>
       </div>
     </div>
   </div>
@@ -529,6 +727,7 @@ export function renderDashboardHTML(version: string): string {
 
         document.getElementById('content').className = 'grid grid-main fade-in';
         document.getElementById('content').style.display = 'grid';
+        loadTeam(); // v3.0: auto-load Hivemind team
       } catch(e) {
         alert('Failed to load project data: ' + e.message);
       } finally {
@@ -619,6 +818,118 @@ export function renderDashboardHTML(version: string): string {
 
     // Initialize the graph on page load
     loadGraph();
+
+    // ─── Settings Modal (v3.0) ───
+    function openSettings() {
+      document.getElementById('settingsModal').classList.add('active');
+      loadSettings();
+    }
+    function closeSettings() {
+      document.getElementById('settingsModal').classList.remove('active');
+    }
+    // Close on overlay click
+    document.getElementById('settingsModal').addEventListener('click', function(e) {
+      if (e.target === this) closeSettings();
+    });
+
+    async function loadSettings() {
+      try {
+        var res = await fetch('/api/settings');
+        var data = await res.json();
+        var s = data.settings || {};
+        // Runtime toggles
+        if (s.auto_capture === 'true') document.getElementById('toggle-auto-capture').classList.add('active');
+        else document.getElementById('toggle-auto-capture').classList.remove('active');
+        // Context depth
+        if (s.default_context_depth) document.getElementById('select-context-depth').value = s.default_context_depth;
+        // Theme
+        if (s.dashboard_theme) {
+          document.getElementById('select-theme').value = s.dashboard_theme;
+          applyTheme(s.dashboard_theme);
+        }
+        // Boot toggles
+        if (s.hivemind_enabled === 'true') document.getElementById('toggle-hivemind').classList.add('active');
+        else document.getElementById('toggle-hivemind').classList.remove('active');
+      } catch(e) { console.warn('Settings load failed:', e); }
+    }
+
+    function toggleSetting(key, el) {
+      var isActive = el.classList.toggle('active');
+      saveSetting(key, isActive ? 'true' : 'false');
+    }
+    function toggleBootSetting(key, el) {
+      var isActive = el.classList.toggle('active');
+      saveSetting(key, isActive ? 'true' : 'false');
+      showToast('Saved. Restart your AI client for this to take effect.');
+    }
+
+    async function saveSetting(key, value) {
+      try {
+        await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: key, value: value })
+        });
+        // Apply theme instantly on change
+        if (key === 'dashboard_theme') applyTheme(value);
+        showToast('Saved ✓');
+      } catch(e) { console.error('Setting save failed:', e); }
+    }
+
+    /**
+     * applyTheme — sets the data-theme attribute on <html>
+     * CSS custom properties in [data-theme="..."] blocks
+     * override :root defaults instantly, no page reload needed.
+     */
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme || 'dark');
+    }
+
+    function showToast(msg) {
+      var toast = document.getElementById('savedToast');
+      toast.textContent = msg || 'Saved ✓';
+      toast.classList.add('show');
+      setTimeout(function() { toast.classList.remove('show'); }, 2000);
+    }
+
+    // ─── Hivemind Radar (v3.0) ───
+    async function loadTeam() {
+      var project = document.getElementById('projectSelect').value;
+      if (!project) return;
+      var card = document.getElementById('hivemindCard');
+      try {
+        var res = await fetch('/api/team?project=' + encodeURIComponent(project));
+        var data = await res.json();
+        var team = data.team || [];
+        var list = document.getElementById('teamList');
+        if (team.length > 0) {
+          var roleIcons = {dev:'🛠️',qa:'🔍',pm:'📋',lead:'🏗️',security:'🔒',ux:'🎨',cmo:'📢'};
+          list.innerHTML = team.map(function(a) {
+            var icon = roleIcons[a.role] || '🤖';
+            var ago = a.last_heartbeat ? timeAgo(a.last_heartbeat) : '?';
+            return '<li class="team-item">' +
+              '<span class="pulse-dot"></span>' +
+              '<span class="team-role">' + icon + ' ' + escapeHtml(a.role) + '</span>' +
+              '<span class="team-task">' + escapeHtml(a.current_task || 'idle') + '</span>' +
+              '<span class="team-heartbeat">' + ago + '</span></li>';
+          }).join('');
+          card.style.display = 'block';
+        } else {
+          list.innerHTML = '<li style="color:var(--text-muted);font-size:0.85rem;text-align:center;padding:1rem">No active agents on this project.</li>';
+          card.style.display = 'block';
+        }
+      } catch(e) {
+        console.warn('Team load failed:', e);
+      }
+    }
+
+    function timeAgo(iso) {
+      var diff = Date.now() - new Date(iso).getTime();
+      var mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + 'm ago';
+      return Math.floor(mins/60) + 'h ago';
+    }
   </script>
 </body>
 </html>`;

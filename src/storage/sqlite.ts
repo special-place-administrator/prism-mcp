@@ -31,7 +31,8 @@ import type {
   KnowledgeSearchResult,
   SemanticSearchResult,
   HistorySnapshot,
-  HealthStats,        // v2.2.0: Health check (fsck) aggregate type
+  HealthStats,             // v2.2.0: Health check (fsck) aggregate type
+  AgentRegistryEntry,      // v3.0: Agent Hivemind registry
 } from "./interface.js";
 import { debugLog } from "../utils/logger.js";
 
@@ -212,6 +213,104 @@ export class SqliteStorage implements StorageBackend {
     await this.db.execute(
       `CREATE INDEX IF NOT EXISTS idx_ledger_deleted ON session_ledger(deleted_at)`
     );
+
+    // ─── v3.0 Migration: Agent Hivemind ──────────────────────────
+    //
+    // 1. Add `role` column to session_ledger (simple ALTER TABLE — no UNIQUE issue)
+    // 2. Rebuild session_handoffs with new UNIQUE(project, user_id, role)
+    //    Using 'global' default instead of NULL to avoid SQLite NULL uniqueness trap.
+    // 3. Create agent_registry table
+
+    // session_ledger: simple column add
+    try {
+      await this.db.execute(
+        `ALTER TABLE session_ledger ADD COLUMN role TEXT NOT NULL DEFAULT 'global'`
+      );
+      debugLog("[SqliteStorage] v3.0 migration: added role column to session_ledger");
+    } catch (e: any) {
+      if (!e.message?.includes("duplicate column name")) throw e;
+    }
+    await this.db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_ledger_role ON session_ledger(role)`
+    );
+
+    // session_handoffs: 4-step table rebuild for UNIQUE constraint change
+    // Check if we need to do the rebuild by looking for the role column
+    try {
+      await this.db.execute(`SELECT role FROM session_handoffs LIMIT 1`);
+      // Column exists — migration already ran
+    } catch {
+      // Column doesn't exist — do the table rebuild
+      debugLog("[SqliteStorage] v3.0 migration: rebuilding session_handoffs with role column");
+
+      // Step 1: Create new table with correct constraint
+      await this.db.execute(`
+        CREATE TABLE session_handoffs_v2 (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          project TEXT NOT NULL,
+          user_id TEXT NOT NULL DEFAULT 'default',
+          role TEXT NOT NULL DEFAULT 'global',
+          last_summary TEXT DEFAULT NULL,
+          pending_todo TEXT DEFAULT '[]',
+          active_decisions TEXT DEFAULT '[]',
+          keywords TEXT DEFAULT '[]',
+          key_context TEXT DEFAULT NULL,
+          active_branch TEXT DEFAULT NULL,
+          version INTEGER NOT NULL DEFAULT 1,
+          metadata TEXT DEFAULT '{}',
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(project, user_id, role)
+        )
+      `);
+
+      // Step 2: Copy data with explicit column names (Pro-Tip 2)
+      await this.db.execute(`
+        INSERT INTO session_handoffs_v2
+          (id, project, user_id, role, last_summary, pending_todo,
+           active_decisions, keywords, key_context, active_branch,
+           version, metadata, created_at, updated_at)
+        SELECT
+          id, project, user_id, 'global', last_summary, pending_todo,
+          active_decisions, keywords, key_context, active_branch,
+          version, metadata, created_at, updated_at
+        FROM session_handoffs
+      `);
+
+      // Step 3: Drop old and rename
+      await this.db.execute(`DROP TABLE session_handoffs`);
+      await this.db.execute(`ALTER TABLE session_handoffs_v2 RENAME TO session_handoffs`);
+
+      debugLog("[SqliteStorage] v3.0 migration: session_handoffs rebuilt with UNIQUE(project, user_id, role)");
+    }
+
+    // agent_registry: new table for Hivemind coordination
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS agent_registry (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        project TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT 'default',
+        role TEXT NOT NULL,
+        agent_name TEXT DEFAULT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        current_task TEXT DEFAULT NULL,
+        last_heartbeat TEXT DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(project, user_id, role)
+      )
+    `);
+    await this.db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_registry_project ON agent_registry(project, user_id)`
+    );
+
+    // system_settings: key-value store for dashboard runtime settings (v3.0)
+    await this.db.execute(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    `);
   }
 
   // ─── PostgREST Filter Parser ───────────────────────────────
@@ -324,14 +423,15 @@ export class SqliteStorage implements StorageBackend {
 
     await this.db.execute({
       sql: `INSERT INTO session_ledger
-        (id, project, conversation_id, user_id, summary, todos, files_changed,
+        (id, project, conversation_id, user_id, role, summary, todos, files_changed,
          decisions, keywords, is_rollup, rollup_count, title, agent_name, created_at, session_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         id,
         entry.project,
         entry.conversation_id,
         entry.user_id,
+        entry.role || "global",   // v3.0: default to 'global'
         entry.summary,
         JSON.stringify(entry.todos || []),
         JSON.stringify(entry.files_changed || []),
@@ -450,19 +550,22 @@ export class SqliteStorage implements StorageBackend {
     handoff: HandoffEntry,
     expectedVersion?: number | null
   ): Promise<SaveHandoffResult> {
+    const role = handoff.role || "global"; // v3.0: default to 'global'
+
     // CASE 1: No expectedVersion → UPSERT (create or force-update)
     if (expectedVersion === null || expectedVersion === undefined) {
       // Try INSERT first
       try {
         await this.db.execute({
           sql: `INSERT INTO session_handoffs
-            (id, project, user_id, last_summary, pending_todo, active_decisions,
+            (id, project, user_id, role, last_summary, pending_todo, active_decisions,
              keywords, key_context, active_branch, version, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
           args: [
             randomUUID(),
             handoff.project,
             handoff.user_id,
+            role,
             handoff.last_summary ?? null,
             JSON.stringify(handoff.pending_todo ?? []),
             JSON.stringify(handoff.active_decisions ?? []),
@@ -482,7 +585,7 @@ export class SqliteStorage implements StorageBackend {
               SET last_summary = ?, pending_todo = ?, active_decisions = ?,
                   keywords = ?, key_context = ?, active_branch = ?,
                   metadata = ?, version = version + 1, updated_at = datetime('now')
-              WHERE project = ? AND user_id = ?
+              WHERE project = ? AND user_id = ? AND role = ?
               RETURNING version`,
             args: [
               handoff.last_summary ?? null,
@@ -494,6 +597,7 @@ export class SqliteStorage implements StorageBackend {
               JSON.stringify(handoff.metadata ?? {}),
               handoff.project,
               handoff.user_id,
+              role,
             ],
           });
           const newVersion = result.rows[0]?.version as number;
@@ -509,7 +613,7 @@ export class SqliteStorage implements StorageBackend {
         SET last_summary = ?, pending_todo = ?, active_decisions = ?,
             keywords = ?, key_context = ?, active_branch = ?,
             metadata = ?, version = version + 1, updated_at = datetime('now')
-        WHERE project = ? AND user_id = ? AND version = ?
+        WHERE project = ? AND user_id = ? AND role = ? AND version = ?
         RETURNING version`,
       args: [
         handoff.last_summary ?? null,
@@ -521,6 +625,7 @@ export class SqliteStorage implements StorageBackend {
         JSON.stringify(handoff.metadata ?? {}),
         handoff.project,
         handoff.user_id,
+        role,
         expectedVersion,
       ],
     });
@@ -528,8 +633,8 @@ export class SqliteStorage implements StorageBackend {
     if (result.rows.length === 0) {
       // Version mismatch — detect the actual current version
       const check = await this.db.execute({
-        sql: "SELECT version FROM session_handoffs WHERE project = ? AND user_id = ?",
-        args: [handoff.project, handoff.user_id],
+        sql: "SELECT version FROM session_handoffs WHERE project = ? AND user_id = ? AND role = ?",
+        args: [handoff.project, handoff.user_id, role],
       });
 
       if (check.rows.length > 0) {
@@ -561,12 +666,15 @@ export class SqliteStorage implements StorageBackend {
   async loadContext(
     project: string,
     level: string,
-    userId: string
+    userId: string,
+    role?: string  // v3.0: optional role filter
   ): Promise<ContextResult> {
-    // Fetch handoff state
+    const effectiveRole = role || "global";
+
+    // Fetch handoff state (role-scoped)
     const handoffResult = await this.db.execute({
-      sql: "SELECT * FROM session_handoffs WHERE project = ? AND user_id = ?",
-      args: [project, userId],
+      sql: "SELECT * FROM session_handoffs WHERE project = ? AND user_id = ? AND role = ?",
+      args: [project, userId, effectiveRole],
     });
 
     if (handoffResult.rows.length === 0) return null;
@@ -576,6 +684,7 @@ export class SqliteStorage implements StorageBackend {
     // Base context (always returned)
     const context: Record<string, unknown> = {
       project: handoff.project,
+      role: handoff.role, // v3.0: include role in response
       keywords: this.parseJsonColumn(handoff.keywords),
       pending_todo: this.parseJsonColumn(handoff.pending_todo),
       version: handoff.version,
@@ -593,15 +702,15 @@ export class SqliteStorage implements StorageBackend {
     context.key_context = handoff.key_context;
 
     if (level === "standard") {
-      // Add recent ledger entries as summaries
-      // Phase 2: AND deleted_at IS NULL — exclude soft-deleted entries
+      // Add recent ledger entries (role-scoped)
       const recentLedger = await this.db.execute({
         sql: `SELECT summary, decisions, session_date, created_at
               FROM session_ledger
-              WHERE project = ? AND user_id = ? AND archived_at IS NULL AND deleted_at IS NULL
+              WHERE project = ? AND user_id = ? AND role = ?
+                AND archived_at IS NULL AND deleted_at IS NULL
               ORDER BY created_at DESC
               LIMIT 5`,
-        args: [project, userId],
+        args: [project, userId, effectiveRole],
       });
 
       context.recent_sessions = recentLedger.rows.map(r => ({
@@ -610,18 +719,43 @@ export class SqliteStorage implements StorageBackend {
         session_date: r.session_date || r.created_at,
       }));
 
+      // v3.0: Team Roster injection — show active teammates
+      if (role && role !== "global") {
+        try {
+          const teamResult = await this.db.execute({
+            sql: `SELECT role, status, current_task, last_heartbeat
+                  FROM agent_registry
+                  WHERE project = ? AND user_id = ? AND role != ?
+                    AND last_heartbeat > datetime('now', '-30 minutes')
+                  ORDER BY last_heartbeat DESC`,
+            args: [project, userId, role],
+          });
+
+          if (teamResult.rows.length > 0) {
+            context.active_team = teamResult.rows.map(r => ({
+              role: r.role,
+              status: r.status,
+              current_task: r.current_task,
+              last_heartbeat: r.last_heartbeat,
+            }));
+          }
+        } catch {
+          // agent_registry may not exist yet — graceful degradation
+        }
+      }
+
       return context;
     }
 
-    // Deep: add full session history
-    // Phase 2: AND deleted_at IS NULL — exclude soft-deleted entries
+    // Deep: add full session history (role-scoped)
     const fullLedger = await this.db.execute({
       sql: `SELECT summary, decisions, files_changed, todos, session_date, created_at
             FROM session_ledger
-            WHERE project = ? AND user_id = ? AND archived_at IS NULL AND deleted_at IS NULL
+            WHERE project = ? AND user_id = ? AND role = ?
+              AND archived_at IS NULL AND deleted_at IS NULL
             ORDER BY created_at DESC
             LIMIT 50`,
-      args: [project, userId],
+      args: [project, userId, effectiveRole],
     });
 
     context.session_history = fullLedger.rows.map(r => ({
@@ -644,6 +778,7 @@ export class SqliteStorage implements StorageBackend {
     queryText?: string | null;
     limit: number;
     userId: string;
+    role?: string | null;  // v3.0: optional role filter
   }): Promise<KnowledgeSearchResult | null> {
     // Build FTS5 query from keywords
     // "stripe webhook auth" → "stripe OR webhook OR auth"
@@ -774,6 +909,7 @@ export class SqliteStorage implements StorageBackend {
     limit: number;
     similarityThreshold: number;
     userId: string;
+    role?: string | null;  // v3.0: optional role filter
   }): Promise<SemanticSearchResult[]> {
     // ─── VECTOR SEARCH (cosine similarity via libSQL) ───
     // vector_distance_cos() returns distance (0 to 2).
@@ -1047,6 +1183,158 @@ export class SqliteStorage implements StorageBackend {
       totalHandoffs,         // grand total of handoff records
       totalRollups,          // grand total of rollup entries
     };
+  }
+
+  // ─── v3.0: Agent Registry (Hivemind) ───────────────────────
+
+  async registerAgent(entry: AgentRegistryEntry): Promise<AgentRegistryEntry> {
+    const id = randomUUID();
+    const role = entry.role;
+    const status = entry.status || "active";
+
+    try {
+      // Try INSERT first
+      await this.db.execute({
+        sql: `INSERT INTO agent_registry
+          (id, project, user_id, role, agent_name, status, current_task)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          id,
+          entry.project,
+          entry.user_id,
+          role,
+          entry.agent_name ?? null,
+          status,
+          entry.current_task ?? null,
+        ],
+      });
+
+      debugLog(`[SqliteStorage] Agent registered: ${entry.project}/${role}`);
+      return { ...entry, id, status };
+    } catch (err) {
+      // UNIQUE constraint → update existing
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("UNIQUE") || msg.includes("constraint")) {
+        await this.db.execute({
+          sql: `UPDATE agent_registry
+            SET agent_name = ?, status = ?, current_task = ?,
+                last_heartbeat = datetime('now')
+            WHERE project = ? AND user_id = ? AND role = ?`,
+          args: [
+            entry.agent_name ?? null,
+            status,
+            entry.current_task ?? null,
+            entry.project,
+            entry.user_id,
+            role,
+          ],
+        });
+
+        debugLog(`[SqliteStorage] Agent re-registered: ${entry.project}/${role}`);
+        return { ...entry, status };
+      }
+      throw err;
+    }
+  }
+
+  async heartbeatAgent(
+    project: string,
+    userId: string,
+    role: string,
+    currentTask?: string
+  ): Promise<void> {
+    const setClauses = ["last_heartbeat = datetime('now')"];
+    const args: InValue[] = [];
+
+    if (currentTask !== undefined) {
+      setClauses.push("current_task = ?");
+      args.push(currentTask);
+    }
+
+    args.push(project, userId, role);
+
+    await this.db.execute({
+      sql: `UPDATE agent_registry
+        SET ${setClauses.join(", ")}
+        WHERE project = ? AND user_id = ? AND role = ?`,
+      args,
+    });
+  }
+
+  async listTeam(
+    project: string,
+    userId: string,
+    staleMinutes: number = 30
+  ): Promise<AgentRegistryEntry[]> {
+    // Auto-prune stale agents first
+    await this.db.execute({
+      sql: `DELETE FROM agent_registry
+        WHERE project = ? AND user_id = ?
+          AND last_heartbeat < datetime('now', '-' || ? || ' minutes')`,
+      args: [project, userId, staleMinutes],
+    });
+
+    // Fetch remaining active agents
+    const result = await this.db.execute({
+      sql: `SELECT id, project, user_id, role, agent_name, status,
+                   current_task, last_heartbeat, created_at
+            FROM agent_registry
+            WHERE project = ? AND user_id = ?
+            ORDER BY last_heartbeat DESC`,
+      args: [project, userId],
+    });
+
+    return result.rows.map(r => ({
+      id: r.id as string,
+      project: r.project as string,
+      user_id: r.user_id as string,
+      role: r.role as string,
+      agent_name: r.agent_name as string | null,
+      status: (r.status as "active" | "idle" | "shutdown"),
+      current_task: r.current_task as string | null,
+      last_heartbeat: r.last_heartbeat as string,
+      created_at: r.created_at as string,
+    }));
+  }
+
+  async deregisterAgent(
+    project: string,
+    userId: string,
+    role: string
+  ): Promise<void> {
+    await this.db.execute({
+      sql: "DELETE FROM agent_registry WHERE project = ? AND user_id = ? AND role = ?",
+      args: [project, userId, role],
+    });
+    debugLog(`[SqliteStorage] Agent deregistered: ${project}/${role}`);
+  }
+
+  // ─── System Settings (v3.0 Dashboard) ────────────────────────
+
+  async getSetting(key: string): Promise<string | null> {
+    const result = await this.db.execute({
+      sql: "SELECT value FROM system_settings WHERE key = ?",
+      args: [key],
+    });
+    return result.rows.length > 0 ? String(result.rows[0].value) : null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    await this.db.execute({
+      sql: `INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+      args: [key, value],
+    });
+    debugLog(`[SqliteStorage] Setting saved: ${key}=${value}`);
+  }
+
+  async getAllSettings(): Promise<Record<string, string>> {
+    const result = await this.db.execute("SELECT key, value FROM system_settings");
+    const settings: Record<string, string> = {};
+    for (const row of result.rows) {
+      settings[String(row.key)] = String(row.value);
+    }
+    return settings;
   }
 }
 

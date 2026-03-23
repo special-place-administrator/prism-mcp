@@ -64,7 +64,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
     throw new Error("Invalid arguments for session_save_ledger");
   }
 
-  const { project, conversation_id, summary, todos, files_changed, decisions } = args;
+  const { project, conversation_id, summary, todos, files_changed, decisions, role } = args;
   const storage = await getStorage();
 
   debugLog(`[session_save_ledger] Saving ledger entry for project="${project}"`);
@@ -84,6 +84,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
     files_changed: files_changed || [],
     decisions: decisions || [],
     keywords,
+    role: role || "global",  // v3.0: Hivemind role scoping
   });
 
   // ─── Fire-and-forget embedding generation ───
@@ -138,6 +139,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
     active_branch,
     last_summary,
     key_context,
+    role,  // v3.0: Hivemind role
   } = args;
 
   const storage = await getStorage();
@@ -177,6 +179,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
       key_context: key_context ?? null,
       active_branch: active_branch ?? null,
       metadata,
+      role: role || "global",  // v3.0: Hivemind role scoping
     },
     expected_version ?? null
   );
@@ -384,7 +387,7 @@ export async function sessionLoadContextHandler(args: unknown) {
     throw new Error("Invalid arguments for session_load_context");
   }
 
-  const { project, level = "standard" } = args;
+  const { project, level = "standard", role } = args;
 
   const validLevels = ["quick", "standard", "deep"];
   if (!validLevels.includes(level)) {
@@ -400,7 +403,7 @@ export async function sessionLoadContextHandler(args: unknown) {
   debugLog(`[session_load_context] Loading ${level} context for project="${project}"`);
 
   const storage = await getStorage();
-  const data = await storage.loadContext(project, level, PRISM_USER_ID);
+  const data = await storage.loadContext(project, level, PRISM_USER_ID, role);  // v3.0: pass role
 
   if (!data) {
     return {
