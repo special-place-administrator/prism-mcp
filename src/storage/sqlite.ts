@@ -1309,32 +1309,8 @@ export class SqliteStorage implements StorageBackend {
     debugLog(`[SqliteStorage] Agent deregistered: ${project}/${role}`);
   }
 
-  // ─── System Settings (v3.0 Dashboard) ────────────────────────
+  // ─── System Settings (v3.0 Dashboard) - MOVED TO configStorage.ts ───
+  // These were removed to prevent chicken-and-egg database initialization.
 
-  async getSetting(key: string): Promise<string | null> {
-    const result = await this.db.execute({
-      sql: "SELECT value FROM system_settings WHERE key = ?",
-      args: [key],
-    });
-    return result.rows.length > 0 ? String(result.rows[0].value) : null;
-  }
-
-  async setSetting(key: string, value: string): Promise<void> {
-    await this.db.execute({
-      sql: `INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
-      args: [key, value],
-    });
-    debugLog(`[SqliteStorage] Setting saved: ${key}=${value}`);
-  }
-
-  async getAllSettings(): Promise<Record<string, string>> {
-    const result = await this.db.execute("SELECT key, value FROM system_settings");
-    const settings: Record<string, string> = {};
-    for (const row of result.rows) {
-      settings[String(row.key)] = String(row.value);
-    }
-    return settings;
-  }
 }
 

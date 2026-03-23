@@ -556,15 +556,16 @@ export function renderDashboardHTML(version: string): string {
           </div>
           <div class="toggle" id="toggle-hivemind" onclick="toggleBootSetting('hivemind_enabled', this)"></div>
         </div>
-
         <div class="setting-row">
           <div>
             <div class="setting-label">Storage Backend</div>
-            <div class="setting-desc">Set via PRISM_STORAGE env var</div>
+            <div class="setting-desc">Switch between SQLite and Supabase</div>
           </div>
-          <div style="font-size:0.8rem;color:var(--text-muted);font-family:var(--font-mono)" id="storageDisplay">local</div>
+          <select id="storageBackendSelect" onchange="window.saveBootSetting('PRISM_STORAGE', this.value)" style="padding: 0.2rem 0.4rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); cursor: pointer;">
+            <option value="local">SQLite</option>
+            <option value="supabase">Supabase</option>
+          </select>
         </div>
-
         <span class="setting-saved" id="savedToast">Saved ✓</span>
       </div>
     </div>
@@ -832,7 +833,7 @@ export function renderDashboardHTML(version: string): string {
       if (e.target === this) closeSettings();
     });
 
-    async function loadSettings() {
+      async function loadSettings() {
       try {
         var res = await fetch('/api/settings');
         var data = await res.json();
@@ -850,6 +851,11 @@ export function renderDashboardHTML(version: string): string {
         // Boot toggles
         if (s.hivemind_enabled === 'true') document.getElementById('toggle-hivemind').classList.add('active');
         else document.getElementById('toggle-hivemind').classList.remove('active');
+        
+        // Storage Backend
+        if (s.PRISM_STORAGE) {
+          document.getElementById('storageBackendSelect').value = s.PRISM_STORAGE;
+        }
       } catch(e) { console.warn('Settings load failed:', e); }
     }
 
@@ -860,6 +866,10 @@ export function renderDashboardHTML(version: string): string {
     function toggleBootSetting(key, el) {
       var isActive = el.classList.toggle('active');
       saveSetting(key, isActive ? 'true' : 'false');
+      showToast('Saved. Restart your AI client for this to take effect.');
+    }
+    function saveBootSetting(key, value) {
+      saveSetting(key, value);
       showToast('Saved. Restart your AI client for this to take effect.');
     }
 

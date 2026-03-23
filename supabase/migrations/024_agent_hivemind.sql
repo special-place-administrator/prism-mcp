@@ -24,15 +24,36 @@ ALTER TABLE session_ledger
 ALTER TABLE session_handoffs
   ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'global';
 
--- Step 2: Drop the old UNIQUE constraint and create the new one.
--- Postgres supports ALTER TABLE ... DROP CONSTRAINT (unlike SQLite).
--- We need to find the existing constraint name first.
--- If the constraint was unnamed, Postgres auto-names it.
--- Safe approach: recreate the unique index instead.
+-- Step 2: Drop ALL old UNIQUE constraints/indexes on session_handoffs,
+-- then create the new 3-column unique index (project, user_id, role).
+--
+-- Migration 020 created: ALTER TABLE ADD CONSTRAINT uq_handoffs_user_project UNIQUE (user_id, project)
+-- The old code tried DROP INDEX by guessed names — which silently missed named constraints.
+-- This fix dynamically discovers and drops ALL unique constraints regardless of name.
+
+-- 2a: Drop any named UNIQUE constraints (from ALTER TABLE ADD CONSTRAINT)
+DO $$
+DECLARE
+  constraint_rec RECORD;
+BEGIN
+  FOR constraint_rec IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'session_handoffs'::regclass
+      AND contype = 'u'  -- unique constraints only
+  LOOP
+    EXECUTE format('ALTER TABLE session_handoffs DROP CONSTRAINT %I', constraint_rec.conname);
+    RAISE NOTICE 'Dropped constraint: %', constraint_rec.conname;
+  END LOOP;
+END $$;
+
+-- 2b: Drop any unique indexes (from CREATE UNIQUE INDEX)
 DROP INDEX IF EXISTS session_handoffs_project_user_id_key;
 DROP INDEX IF EXISTS session_handoffs_project_user_id_role_key;
+DROP INDEX IF EXISTS idx_handoffs_user_project;
 
-CREATE UNIQUE INDEX session_handoffs_project_user_id_role_key
+-- 2c: Create the new 3-column unique index
+CREATE UNIQUE INDEX IF NOT EXISTS session_handoffs_project_user_id_role_key
   ON session_handoffs (project, user_id, role);
 
 -- ─── 3. agent_registry: New table for Hivemind coordination ─────

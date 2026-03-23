@@ -251,8 +251,8 @@ export async function startDashboardServer(): Promise<void> {
       // ─── API: Settings — GET (v3.0 Dashboard Settings) ───
       if (url.pathname === "/api/settings" && req.method === "GET") {
         try {
-          const s = storage as any;
-          const settings = s.getAllSettings ? await s.getAllSettings() : {};
+          const { getAllSettings } = await import("../storage/configStorage.js");
+          const settings = await getAllSettings();
           res.writeHead(200, { "Content-Type": "application/json" });
           return res.end(JSON.stringify({ settings }));
         } catch {
@@ -266,9 +266,9 @@ export async function startDashboardServer(): Promise<void> {
         try {
           const body = await readBody(req);
           const parsed = JSON.parse(body);
-          const s = storage as any;
-          if (s.setSetting && parsed.key && parsed.value !== undefined) {
-            await s.setSetting(parsed.key, String(parsed.value));
+          if (parsed.key && parsed.value !== undefined) {
+            const { setSetting } = await import("../storage/configStorage.js");
+            await setSetting(parsed.key, String(parsed.value));
             res.writeHead(200, { "Content-Type": "application/json" });
             return res.end(JSON.stringify({ ok: true, key: parsed.key, value: parsed.value }));
           }
@@ -278,6 +278,7 @@ export async function startDashboardServer(): Promise<void> {
           res.writeHead(400, { "Content-Type": "application/json" });
           return res.end(JSON.stringify({ error: "Invalid JSON body" }));
         }
+
       }
 
       // ─── 404 ───

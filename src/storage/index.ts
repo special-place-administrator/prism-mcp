@@ -10,12 +10,14 @@
  *   // Pass `storage` to all session memory handlers
  */
 
-import { PRISM_STORAGE } from "../config.js";
+import { PRISM_STORAGE as ENV_PRISM_STORAGE } from "../config.js";
 import { debugLog } from "../utils/logger.js";
 import { SupabaseStorage } from "./supabase.js";
 import type { StorageBackend } from "./interface.js";
+import { getSetting } from "./configStorage.js";
 
 let storageInstance: StorageBackend | null = null;
+export let activeStorageBackend: string = "local";
 
 /**
  * Returns the singleton storage backend.
@@ -29,16 +31,17 @@ let storageInstance: StorageBackend | null = null;
 export async function getStorage(): Promise<StorageBackend> {
   if (storageInstance) return storageInstance;
 
-  debugLog(`[Prism Storage] Initializing backend: ${PRISM_STORAGE}`);
+  activeStorageBackend = await getSetting("PRISM_STORAGE", ENV_PRISM_STORAGE) as "supabase" | "local";
+  debugLog(`[Prism Storage] Initializing backend: ${activeStorageBackend}`);
 
-  if (PRISM_STORAGE === "local") {
+  if (activeStorageBackend === "local") {
     const { SqliteStorage } = await import("./sqlite.js");
     storageInstance = new SqliteStorage();
-  } else if (PRISM_STORAGE === "supabase") {
+  } else if (activeStorageBackend === "supabase") {
     storageInstance = new SupabaseStorage();
   } else {
     throw new Error(
-      `Unknown PRISM_STORAGE value: "${PRISM_STORAGE}". ` +
+      `Unknown PRISM_STORAGE value: "${activeStorageBackend}". ` +
       `Must be "local" or "supabase".`
     );
   }
