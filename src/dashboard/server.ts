@@ -82,7 +82,7 @@ async function killPortHolder(port: number): Promise<void> {
 
 export async function startDashboardServer(): Promise<void> {
   // Clean up any zombie dashboard process from a previous session
-  killPortHolder(PORT);
+  await killPortHolder(PORT);
 
   const storage = await getStorage();
 
