@@ -14,7 +14,7 @@
 
 ## Table of Contents
 
-- [What's New (v3.0.0)](#whats-new-in-v300---agent-hivemind-)
+- [What's New (v3.0.1)](#whats-new-in-v301---agent-identity--brain-clean-up-)
 - [How Prism Compares](#how-prism-compares)
 - [Quick Start](#quick-start-zero-config--local-mode)
 - [Mind Palace Dashboard](#-the-mind-palace-dashboard)
@@ -39,7 +39,17 @@
 
 ---
 
-## What's New in v3.0.0 — Agent Hivemind 🐝
+## What's New in v3.0.1 — Agent Identity & Brain Clean-up 🧹
+
+| Feature | Description |
+|---|---|
+| 🧹 **Brain Health Clean-up** | New **Fix Issues** button in the Mind Palace Dashboard's Brain Health card — detects orphaned handoffs, missing embeddings, and stale rollups, then cleans them up in one click without needing the MCP tool. |
+| 👤 **Agent Identity Settings** | Dashboard Settings → Agent Identity panel lets you set a **Default Role** (`dev`, `qa`, `pm`…) and **Agent Name** (e.g. `Dmitri`). Both values auto-apply as fallbacks in all memory and Hivemind tools — no need to pass them per call. |
+| 📜 **Role-Scoped Skills** | Each agent role can have its own persistent skill/rules document stored in the dashboard (⚙️ Settings → Skills). It is automatically injected into every `session_load_context` response so the agent boots with its rules pre-loaded. |
+| 🔤 **Resource Formatting Fix** | `memory://{project}/handoff` resources now render as formatted plain text (Last Summary, TODOs, Keywords) instead of a raw JSON blob — readable in Claude Desktop's paperclip attach panel. |
+
+<details>
+<summary><strong>What's in v3.0.0 — Agent Hivemind 🐝</strong></summary>
 
 | Feature | Description |
 |---|---|
@@ -50,6 +60,9 @@
 | 📡 **Hivemind Radar** | New dashboard widget showing active agents, their roles (with icons), current tasks, and heartbeat timestamps — a real-time team coordination dashboard. |
 | 🔒 **Conditional Tool Registration** | `PRISM_ENABLE_HIVEMIND` env var gates Hivemind tools — users who don't need multi-agent features keep the same lean tool count as v2.x. |
 | ✅ **Test Suite** | 58 tests across 4 suites (storage, tools, dashboard, load) with Vitest — includes concurrent write stress tests, role isolation verification, and 0.2ms/write performance benchmarks. |
+
+</details>
+
 
 <details>
 <summary><strong>What's in v2.5.0 — Enterprise Memory 🏗️</strong></summary>
@@ -103,7 +116,7 @@
 | Feature | Description |
 |---|---|
 | 🩺 **Brain Health Check** | `session_health_check` — like Unix `fsck` for your agent's memory. Detects missing embeddings, duplicate entries, orphaned handoffs, and stale rollups. Use `auto_fix: true` to repair automatically. |
-| 📊 **Mind Palace Health** | Brain health indicator on the Mind Palace Dashboard — see your memory integrity at a glance. |
+| 📊 **Mind Palace Health** | Brain health indicator on the Mind Palace Dashboard — see your memory integrity at a glance. **🧹 Fix Issues** button auto-deletes orphaned handoffs in one click. |
 
 </details>
 
@@ -238,11 +251,15 @@ Open **`http://localhost:3000`** in your browser to see exactly what your AI age
 ![Mind Palace Dashboard](docs/mind-palace-dashboard.png)
 
 - **Current State & TODOs** — See the exact context injected into the LLM's prompt
+- **Agent Identity Chip** — Header shows your active role + name (e.g. `🛠️ dev · Antigravity`); click to open Settings
+- **Brain Health 🩺** — Memory integrity status at a glance; **🧹 Fix Issues** button auto-cleans orphaned handoffs in one click
 - **Git Drift Detection** — Alerts you if you've modified code outside the agent's view
 - **Morning Briefing** — AI-synthesized action plan from your last sessions
 - **Time Travel Timeline** — Browse historical handoff states and revert any version
 - **Visual Memory Vault** — Browse UI screenshots and auto-captured HTML states
 - **Session Ledger** — Full audit trail of every decision your agent has made
+- **Neural Graph** — Force-directed visualization of project ↔ keyword associations
+- **Hivemind Radar** — Real-time active agent roster with role, task, and heartbeat
 
 The dashboard auto-discovers all your projects and updates in real time.
 
@@ -464,7 +481,15 @@ graph TB
 
 | Tool | Purpose | Key Args | Returns |
 |------|---------|----------|---------|
-| `session_health_check` | Scan brain for integrity issues (`fsck`) | `auto_fix` (boolean) | Health report & auto-repairs |
+| `session_health_check` | Scan brain for integrity issues (`fsck`) | `project`, `auto_fix` (boolean) | Health report & auto-repairs |
+
+The **Mind Palace Dashboard** also shows a live **Brain Health 🩺** card for every project:
+
+- **Status indicator** — `✅ Healthy` or `⚠️ Issues detected` with entry/handoff/rollup counts
+- **🧹 Fix Issues button** — appears automatically when issues are detected; click to clean up orphaned handoffs and stale rollups in one click, no MCP tool call required
+- **No issues found** — shown in green when memory integrity is confirmed
+
+The tool and dashboard button both call the same repair logic — the dashboard button is simply a zero-friction shortcut for common maintenance.
 
 ### v2.5 Enterprise Memory Tools
 
@@ -1084,14 +1109,19 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 
 > **[View the full project board →](https://github.com/users/dcostenco/projects/1/views/1)**
 
+### ✅ v3.0.1 — Agent Identity & Brain Clean-up (Shipped!)
+
+See [What's New in v3.0.1](#whats-new-in-v301---agent-identity--brain-clean-up-) above.
+
 ### ✅ v3.0 — Agent Hivemind (Shipped!)
 
-See [What's New in v3.0.0](#whats-new-in-v300---agent-hivemind-) above.
+See [What's New in v3.0.0 — Agent Hivemind](#whats-new-in-v300---agent-hivemind-) above.
 
 ### 🚀 Future Ideas
 
 | Feature | Issue | Description |
 |---------|-------|-------------|
+| **Role-Scoped Skills & Rules** | — | Each agent role (`dev`, `qa`, `pm`, etc.) gets its own persistent skill/rules document. Preloaded automatically at session start via `session_load_context`. Skills editable and uploadable from the Mind Palace Dashboard (⚙️ → Skills tab per role). Stored in `configStorage` per-role key — backend already exists. |
 | OpenTelemetry SDK Integration | [#6](https://github.com/dcostenco/prism-mcp/issues/6) | W3C-compliant tracing with Jaeger/Zipkin export |
 | GDPR Right to Portability | [#7](https://github.com/dcostenco/prism-mcp/issues/7) | `session_export_memory` tool for Art. 20 compliance |
 | Multi-agent CRDT Conflict Resolution | [#9](https://github.com/dcostenco/prism-mcp/issues/9) | Conflict-free replicated data types for concurrent agent edits |

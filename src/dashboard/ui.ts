@@ -296,6 +296,21 @@ export function renderDashboardHTML(version: string): string {
     .health-issues .issue-row {
       padding: 0.3rem 0; display: flex; gap: 0.5rem; align-items: flex-start;
     }
+    .cleanup-btn {
+      margin-left: auto; background: rgba(244,63,94,0.12); border: 1px solid rgba(244,63,94,0.3);
+      color: var(--accent-rose); cursor: pointer; font-size: 0.75rem; font-weight: 600;
+      padding: 0.2rem 0.65rem; border-radius: 6px; transition: all 0.2s;
+    }
+    .cleanup-btn:hover { background: rgba(244,63,94,0.25); border-color: var(--accent-rose); }
+    .cleanup-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .toast-fixed {
+      position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 200;
+      padding: 0.65rem 1.2rem; border-radius: 10px; font-size: 0.85rem; font-weight: 500;
+      backdrop-filter: blur(10px); border: 1px solid var(--border-glow);
+      background: var(--bg-secondary); color: var(--text-primary);
+      opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    }
+    .toast-fixed.show { opacity: 1; }
 
     /* ─── Neural Graph (v2.3.0) ─── */
     #network-container {
@@ -319,6 +334,45 @@ export function renderDashboardHTML(version: string): string {
       transition: all 0.2s;
     }
     .settings-btn:hover { border-color: var(--border-glow); color: var(--accent-purple); }
+    .identity-chip {
+      display: none; align-items: center; gap: 0.4rem;
+      padding: 0.35rem 0.75rem; border-radius: 999px;
+      background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.25);
+      color: var(--text-secondary); font-size: 0.8rem; font-weight: 500;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .identity-chip:hover { border-color: var(--accent-purple); color: var(--accent-purple); background: rgba(139,92,246,0.2); }
+    .identity-chip .role-icon { font-size: 0.9rem; }
+    .identity-chip .identity-label { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Settings modal tab bar */
+    .settings-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-glass); margin: 0 -1.5rem 1.2rem; padding: 0 1.5rem; }
+    .s-tab { padding: 0.55rem 1.1rem; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all 0.2s; background: none; border-top: none; border-left: none; border-right: none; }
+    .s-tab.active { color: var(--accent-purple); border-bottom-color: var(--accent-purple); }
+    .s-tab:hover:not(.active) { color: var(--text-primary); }
+    .s-tab-panel { display: none; } .s-tab-panel.active { display: block; }
+    /* Skills editor */
+    .skill-role-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+    .skill-role-row label { font-size: 0.82rem; color: var(--text-secondary); }
+    .skill-role-select { padding: 0.3rem 0.6rem; background: var(--bg-hover); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); }
+    .skill-textarea { width: 100%; min-height: 220px; background: var(--bg-hover); color: var(--text-primary);
+      border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem;
+      font-size: 0.82rem; font-family: var(--font-mono); line-height: 1.5; resize: vertical;
+      box-sizing: border-box; transition: border-color 0.2s; }
+    .skill-textarea:focus { outline: none; border-color: var(--accent-purple); }
+    .skill-char-count { font-size: 0.74rem; color: var(--text-muted); text-align: right; margin-top: 0.3rem; }
+    .skill-actions { display: flex; gap: 0.6rem; margin-top: 0.85rem; align-items: center; }
+    .skill-save-btn { background: var(--accent-purple); color: #fff; border: none; border-radius: var(--radius-sm);
+      padding: 0.45rem 1rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+    .skill-save-btn:hover { opacity: 0.85; }
+    .skill-upload-btn { background: none; border: 1px solid var(--border-glass); color: var(--text-secondary);
+      border-radius: var(--radius-sm); padding: 0.45rem 0.85rem; font-size: 0.82rem; cursor: pointer; transition: all 0.2s; }
+    .skill-upload-btn:hover { border-color: var(--accent-purple); color: var(--accent-purple); }
+    .skill-clear-btn { background: none; border: none; color: var(--text-muted); font-size: 0.8rem; cursor: pointer;
+      margin-left: auto; transition: color 0.2s; }
+    .skill-clear-btn:hover { color: #ef4444; }
+    .skill-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.6rem; line-height: 1.5; }
     .modal-overlay {
       display: none; position: fixed; inset: 0; z-index: 100;
       background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
@@ -403,6 +457,7 @@ export function renderDashboardHTML(version: string): string {
         <span class="version-badge">v${version}</span>
       </div>
       <div class="selector">
+        <span class="identity-chip" id="identityChip" onclick="openSettings()" title="Agent Identity — click to change"></span>
         <select id="projectSelect">
           <option value="">Loading projects...</option>
         </select>
@@ -441,7 +496,10 @@ export function renderDashboardHTML(version: string): string {
 
         <!-- Brain Health (v2.2.0) -->
         <div class="card" id="healthCard" style="display:none">
-          <div class="card-title"><span class="dot" style="background:var(--accent-green)"></span> Brain Health 🩺</div>
+          <div class="card-title">
+            <span class="dot" style="background:var(--accent-green)"></span> Brain Health 🩺
+            <button class="cleanup-btn" id="cleanupBtn" onclick="cleanupIssues()" style="display:none">🧹 Fix Issues</button>
+          </div>
           <div class="health-status">
             <div class="health-dot unknown" id="healthDot"></div>
             <div>
@@ -512,6 +570,15 @@ export function renderDashboardHTML(version: string): string {
       <div class="modal">
         <button class="modal-close" onclick="closeSettings()">✕</button>
         <h2>⚙️ Settings</h2>
+
+        <!-- Tab bar -->
+        <div class="settings-tabs">
+          <button class="s-tab active" id="stab-settings" onclick="switchSettingsTab('settings')">⚙️ Settings</button>
+          <button class="s-tab" id="stab-skills" onclick="switchSettingsTab('skills')">📜 Skills</button>
+        </div>
+
+        <!-- Settings panel (existing content) -->
+        <div class="s-tab-panel active" id="spanel-settings">
 
         <div class="setting-section">Runtime Settings</div>
 
@@ -598,11 +665,75 @@ export function renderDashboardHTML(version: string): string {
         </div>
 
         <span class="setting-saved" id="savedToast">Saved ✓</span>
+        </div><!-- /spanel-settings -->
+
+        <!-- Skills panel -->
+        <div class="s-tab-panel" id="spanel-skills">
+          <div class="skill-role-row">
+            <label>Role</label>
+            <select class="skill-role-select" id="skillRoleSelect" onchange="loadSkillForRole(this.value)">
+              <option value="global">🌐 global</option>
+              <option value="dev">🛠️ dev</option>
+              <option value="qa">🔍 qa</option>
+              <option value="pm">📋 pm</option>
+              <option value="lead">🏗️ lead</option>
+              <option value="security">🔒 security</option>
+              <option value="ux">🎨 ux</option>
+            </select>
+          </div>
+          <textarea class="skill-textarea" id="skillTextarea"
+            placeholder="Paste rules, conventions, or prompts for this role...
+Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode\n- Log errors to console.error"
+            oninput="document.getElementById('skillCharCount').textContent = this.value.length + ' chars'">
+          </textarea>
+          <div class="skill-char-count" id="skillCharCount">0 chars</div>
+          <div class="skill-actions">
+            <button class="skill-save-btn" onclick="saveCurrentSkill()">💾 Save</button>
+            <label class="skill-upload-btn" title="Upload a .md or .txt file">
+              📎 Upload file
+              <input type="file" accept=".md,.txt,.markdown" style="display:none"
+                onchange="handleSkillUpload(this)">
+            </label>
+            <button class="skill-clear-btn" onclick="clearCurrentSkill()">🗑️ Clear</button>
+          </div>
+          <div class="skill-hint">
+            Skills are auto-injected into <code>session_load_context</code> responses for this role.<br>
+            Use Markdown. Changes take effect immediately — no restart needed.
+          </div>
+        </div><!-- /spanel-skills -->
+
       </div>
     </div>
   </div>
 
+  <!-- Fixed toast for cleanup feedback -->
+  <div class="toast-fixed" id="fixedToast"></div>
+
   <script>
+    // Role icon map
+    var ROLE_ICONS = {dev:'🛠️',qa:'🔍',pm:'📋',lead:'🏗️',security:'🔒',ux:'🎨',global:'🌐',cmo:'📢'};
+
+    // Load and render the identity chip from settings
+    async function loadIdentityChip() {
+      try {
+        var res = await fetch('/api/settings');
+        var data = await res.json();
+        var s = data.settings || {};
+        var role = s.default_role || '';
+        var name = s.agent_name || '';
+        var chip = document.getElementById('identityChip');
+        if (!chip) return;
+        if (role && role !== 'global' || name) {
+          var icon = ROLE_ICONS[role] || '🤖';
+          var label = name ? (role && role !== 'global' ? role + ' · ' + name : name) : role;
+          chip.innerHTML = '<span class="role-icon">' + icon + '</span><span class="identity-label">' + escapeHtml(label) + '</span>';
+          chip.style.display = 'flex';
+        } else {
+          chip.style.display = 'none';
+        }
+      } catch(e) { /* silently skip */ }
+    }
+
     // Auto-load project list on page load
     (async function() {
       try {
@@ -618,6 +749,8 @@ export function renderDashboardHTML(version: string): string {
       } catch(e) {
         document.getElementById('projectSelect').innerHTML = '<option value="">Error loading projects</option>';
       }
+      // Load identity chip once settings are available
+      loadIdentityChip();
     })();
 
     async function loadProject() {
@@ -739,6 +872,7 @@ export function renderDashboardHTML(version: string): string {
 
           // Issue rows
           var issues = healthData.issues || [];
+          var cleanupBtn = document.getElementById('cleanupBtn');
           if (issues.length > 0) {
             var sevIcons = { error: '🔴', warning: '🟡', info: '🔵' };
             healthIssues.innerHTML = issues.map(function(i) {
@@ -747,8 +881,10 @@ export function renderDashboardHTML(version: string): string {
                 '<span>' + escapeHtml(i.message) + '</span>' +
                 '</div>';
             }).join('');
+            if (cleanupBtn) cleanupBtn.style.display = 'inline-block';
           } else {
             healthIssues.innerHTML = '<div style="color:var(--accent-green);font-size:0.8rem">🎉 No issues found</div>';
+            if (cleanupBtn) cleanupBtn.style.display = 'none';
           }
 
           healthCard.style.display = 'block';
@@ -864,6 +1000,75 @@ export function renderDashboardHTML(version: string): string {
       if (e.target === this) closeSettings();
     });
 
+    // ─── Skills Tab JS ───────────────────────────────────────────
+    var _skillsCache = {};  // role → content cache
+
+    function switchSettingsTab(tab) {
+      ['settings','skills'].forEach(function(t) {
+        document.getElementById('stab-' + t).classList.toggle('active', t === tab);
+        document.getElementById('spanel-' + t).classList.toggle('active', t === tab);
+      });
+      if (tab === 'skills') {
+        // Load skill for whichever role is currently selected
+        var role = document.getElementById('skillRoleSelect').value;
+        loadSkillForRole(role);
+      }
+    }
+
+    async function loadSkillForRole(role) {
+      try {
+        var res = await fetch('/api/skills');
+        var data = await res.json();
+        _skillsCache = data.skills || {};
+        var content = _skillsCache[role] || '';
+        var ta = document.getElementById('skillTextarea');
+        ta.value = content;
+        document.getElementById('skillCharCount').textContent = content.length + ' chars';
+      } catch(e) { console.warn('Skills load failed:', e); }
+    }
+
+    async function saveCurrentSkill() {
+      var role = document.getElementById('skillRoleSelect').value;
+      var content = document.getElementById('skillTextarea').value;
+      try {
+        await fetch('/api/skills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: role, content: content })
+        });
+        _skillsCache[role] = content;
+        showFixedToast('✅ Skill saved for ' + role, true);
+      } catch(e) { showFixedToast('❌ Save failed', false); }
+    }
+
+    async function clearCurrentSkill() {
+      var role = document.getElementById('skillRoleSelect').value;
+      try {
+        await fetch('/api/skills/' + role, { method: 'DELETE' });
+        document.getElementById('skillTextarea').value = '';
+        document.getElementById('skillCharCount').textContent = '0 chars';
+        _skillsCache[role] = '';
+        showFixedToast('🗑️ Skill cleared for ' + role, true);
+      } catch(e) { showFixedToast('❌ Clear failed', false); }
+    }
+
+    function handleSkillUpload(input) {
+      var file = input.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = async function(e) {
+        var content = e.target.result;
+        var ta = document.getElementById('skillTextarea');
+        ta.value = content;
+        document.getElementById('skillCharCount').textContent = content.length + ' chars';
+        // Auto-save after upload
+        await saveCurrentSkill();
+      };
+      reader.readAsText(file);
+      input.value = '';  // reset so same file can be re-uploaded
+    }
+
+
       async function loadSettings() {
       try {
         var res = await fetch('/api/settings');
@@ -914,8 +1119,9 @@ export function renderDashboardHTML(version: string): string {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: key, value: value })
         });
-        // Apply theme instantly on change
         if (key === 'dashboard_theme') applyTheme(value);
+        // Refresh identity chip if role or name changed
+        if (key === 'default_role' || key === 'agent_name') loadIdentityChip();
         showToast('Saved ✓');
       } catch(e) { console.error('Setting save failed:', e); }
     }
@@ -973,6 +1179,55 @@ export function renderDashboardHTML(version: string): string {
       if (mins < 1) return 'just now';
       if (mins < 60) return mins + 'm ago';
       return Math.floor(mins/60) + 'h ago';
+    }
+
+    // ─── Brain Health Cleanup (v3.1) ───
+    async function cleanupIssues() {
+      var btn = document.getElementById('cleanupBtn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Cleaning...'; }
+      try {
+        var res = await fetch('/api/health/cleanup', { method: 'POST' });
+        var data = await res.json();
+        showFixedToast(data.message || (data.ok ? 'Cleanup complete.' : 'Cleanup failed.'), data.ok);
+        // Re-run health check to refresh the card
+        setTimeout(async function() {
+          try {
+            var healthRes = await fetch('/api/health');
+            var healthData = await healthRes.json();
+            var healthDot = document.getElementById('healthDot');
+            var healthLabel = document.getElementById('healthLabel');
+            var healthSummary = document.getElementById('healthSummary');
+            var healthIssues = document.getElementById('healthIssues');
+            var cleanupBtn = document.getElementById('cleanupBtn');
+            var statusMap = { healthy: '✅ Healthy', degraded: '⚠️ Degraded', unhealthy: '🔴 Unhealthy' };
+            healthDot.className = 'health-dot ' + (healthData.status || 'unknown');
+            healthLabel.textContent = statusMap[healthData.status] || '❓ Unknown';
+            var t = healthData.totals || {};
+            healthSummary.textContent = (t.activeEntries || 0) + ' entries · ' + (t.handoffs || 0) + ' handoffs · ' + (t.rollups || 0) + ' rollups';
+            var issues = healthData.issues || [];
+            if (issues.length > 0) {
+              var sevIcons = { error: '🔴', warning: '🟡', info: '🔵' };
+              healthIssues.innerHTML = issues.map(function(i) {
+                return '<div class="issue-row"><span>' + (sevIcons[i.severity] || '❓') + '</span><span>' + escapeHtml(i.message) + '</span></div>';
+              }).join('');
+              if (cleanupBtn) { cleanupBtn.disabled = false; cleanupBtn.textContent = '🧹 Fix Issues'; cleanupBtn.style.display = 'inline-block'; }
+            } else {
+              healthIssues.innerHTML = '<div style="color:var(--accent-green);font-size:0.8rem">🎉 No issues found</div>';
+              if (cleanupBtn) cleanupBtn.style.display = 'none';
+            }
+          } catch(e) {}
+        }, 400);
+      } catch(e) {
+        showFixedToast('Cleanup request failed.', false);
+        if (btn) { btn.disabled = false; btn.textContent = '🧹 Fix Issues'; }
+      }
+    }
+
+    function showFixedToast(msg, ok) {
+      var t = document.getElementById('fixedToast');
+      t.textContent = (ok === false ? '❌ ' : '✅ ') + msg;
+      t.classList.add('show');
+      setTimeout(function() { t.classList.remove('show'); }, 3500);
     }
   </script>
 </body>

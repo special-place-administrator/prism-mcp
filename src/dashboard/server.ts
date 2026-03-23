@@ -22,6 +22,7 @@ import { exec } from "child_process";
 import { getStorage } from "../storage/index.js";
 import { PRISM_USER_ID, SERVER_CONFIG } from "../config.js";
 import { renderDashboardHTML } from "./ui.js";
+import { getAllSettings, setSetting } from "../storage/configStorage.js";
 
 const PORT = parseInt(process.env.PRISM_DASHBOARD_PORT || "3000", 10);
 
@@ -142,7 +143,7 @@ export async function startDashboardServer(): Promise<void> {
       }
 
       // ─── API: Brain Health Check (v2.2.0) ───
-      if (url.pathname === "/api/health") {
+      if (url.pathname === "/api/health" && req.method === "GET") {
         try {
           const { runHealthCheck } = await import("../utils/healthCheck.js");
           const stats = await storage.getHealthStats(PRISM_USER_ID);
@@ -161,6 +162,79 @@ export async function startDashboardServer(): Promise<void> {
             timestamp: new Date().toISOString(),
           }));
         }
+      }
+
+      // ─── API: Brain Health Cleanup (v3.1) ───
+      // Deletes orphaned handoffs (handoffs with no backing ledger entries).
+      if (url.pathname === "/api/health/cleanup" && req.method === "POST") {
+        try {
+          const { runHealthCheck } = await import("../utils/healthCheck.js");
+          const stats = await storage.getHealthStats(PRISM_USER_ID);
+          const report = runHealthCheck(stats);
+
+          // Collect orphaned handoff projects from the health issues
+          const orphaned = stats.orphanedHandoffs || [];
+          const cleaned: string[] = [];
+
+          for (const { project } of orphaned) {
+            try {
+              await storage.deleteHandoff(project, PRISM_USER_ID);
+              cleaned.push(project);
+              console.error(`[Dashboard] Cleaned up orphaned handoff: ${project}`);
+            } catch (delErr) {
+              console.error(`[Dashboard] Failed to delete handoff for ${project}:`, delErr);
+            }
+          }
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({
+            ok: true,
+            cleaned,
+            count: cleaned.length,
+            message: cleaned.length > 0
+              ? `Cleaned up ${cleaned.length} orphaned handoff(s): ${cleaned.join(", ")}`
+              : "No orphaned handoffs to clean up.",
+          }));
+        } catch (err) {
+          console.error("[Dashboard] Health cleanup error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: false, error: "Cleanup failed" }));
+        }
+      }
+
+      // ─── API: Role-Scoped Skills (v3.1) ───
+
+      // GET /api/skills → { skills: { dev: "...", qa: "..." } }
+      if (url.pathname === "/api/skills" && req.method === "GET") {
+        const all = await getAllSettings();
+        const skills: Record<string, string> = {};
+        for (const [k, v] of Object.entries(all)) {
+          if (k.startsWith("skill:") && v) {
+            skills[k.replace("skill:", "")] = v;
+          }
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ skills }));
+      }
+
+      // POST /api/skills → { role, content } saves skill:<role>
+      if (url.pathname === "/api/skills" && req.method === "POST") {
+        const body = await new Promise<string>(resolve => {
+          let data = ""; req.on("data", c => data += c); req.on("end", () => resolve(data));
+        });
+        const { role, content } = JSON.parse(body || "{}");
+        if (!role) { res.writeHead(400); return res.end(JSON.stringify({ error: "role required" })); }
+        await setSetting(`skill:${role}`, content || "");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: true, role }));
+      }
+
+      // DELETE /api/skills/:role → clears skill:<role>
+      if (url.pathname.startsWith("/api/skills/") && req.method === "DELETE") {
+        const role = url.pathname.replace("/api/skills/", "");
+        await setSetting(`skill:${role}`, "");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: true, role }));
       }
 
       // ─── API: Knowledge Graph Data (v2.3.0) ───

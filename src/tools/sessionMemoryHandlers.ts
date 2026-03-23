@@ -391,6 +391,7 @@ export async function sessionLoadContextHandler(args: unknown) {
   }
 
   const { project, level = "standard", role } = args;
+  const agentName = await getSetting("agent_name", "");
 
   const validLevels = ["quick", "standard", "deep"];
   if (!validLevels.includes(level)) {
@@ -564,10 +565,34 @@ export async function sessionLoadContextHandler(args: unknown) {
     formattedContext += `\n📂 Session History (${d.session_history.length} entries):\n` + d.session_history.map((s: any) => `  [${s.session_date?.split("T")[0]}] ${s.summary}`).join("\n") + `\n`;
   }
 
+  // ─── Role-Scoped Skill Injection ─────────────────────────────
+  // If the active role has a skill document stored, append it so the
+  // agent loads its rules/conventions automatically at session start.
+  let skillBlock = "";
+  let skillLoaded = false;
+  if (effectiveRole) {
+    const skillContent = await getSetting(`skill:${effectiveRole}`, "");
+    if (skillContent && skillContent.trim()) {
+      skillBlock = `\n\n[📜 ROLE SKILL: ${effectiveRole}]\n${skillContent.trim()}`;
+      skillLoaded = true;
+      debugLog(`[session_load_context] Injecting skill for role="${effectiveRole}" (${skillContent.length} chars)`);
+    }
+  }
+
+  // ─── Agent Greeting Block ────────────────────────────────────
+  // Shows agent identity (name + role) and skill status after briefing.
+  let greetingBlock = "";
+  if (agentName || effectiveRole) {
+    const namePart = agentName ? `👋 **${agentName}**` : `👋 **Agent**`;
+    const rolePart = effectiveRole ? ` · Role: \`${effectiveRole}\`` : "";
+    const skillPart = skillLoaded ? ` · 📜 \`${effectiveRole}\` skill loaded` : (effectiveRole ? " · 📜 No skill configured" : "");
+    greetingBlock = `\n\n[👤 AGENT IDENTITY]\n${namePart}${rolePart}${skillPart}`;
+  }
+
   return {
     content: [{
       type: "text",
-      text: `📋 Session context for "${project}" (${level}):\n\n${formattedContext.trim()}${driftReport}${briefingBlock}${visualMemoryBlock}${versionNote}`,
+      text: `📋 Session context for "${project}" (${level}):\n\n${formattedContext.trim()}${driftReport}${briefingBlock}${greetingBlock}${visualMemoryBlock}${skillBlock}${versionNote}`,
     }],
     isError: false,
   };

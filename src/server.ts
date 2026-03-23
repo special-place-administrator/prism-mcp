@@ -429,6 +429,8 @@ export function createServer() {
     });
 
     // Read a specific project's handoff as a resource
+    // v3.1 FIX: Returns formatted text/plain (same layout as session_load_context)
+    // so MCP clients render it as readable text instead of a raw JSON blob.
     server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       const uri = request.params.uri;
       const match = uri.match(/^memory:\/\/(.+)\/handoff$/);
@@ -439,22 +441,50 @@ export function createServer() {
 
       const project = decodeURIComponent(match[1]);
       try {
-        // v2.3.6 FIX: Use storage abstraction instead of direct supabaseRpc
         const storage = await getStorage();
         const data = await storage.loadContext(project, "standard", PRISM_USER_ID);
 
-        const resourceData = data || { status: "no_session_found", project };
-        if ((data as any)?.version) {
-          (resourceData as any)._occ_instruction =
-            `When saving handoff state, you MUST pass expected_version: ${(data as any).version} ` +
-            `to prevent state collisions with other sessions.`;
+        if (!data) {
+          return {
+            contents: [{
+              uri,
+              mimeType: "text/plain",
+              text: `No session context found for project "${project}".\nThis project has no previous session history. Starting fresh.`,
+            }],
+          };
         }
+
+        // Format identically to sessionLoadContextHandler so the resource
+        // renders as readable text rather than a raw JSON dump.
+        const d = data as Record<string, any>;
+        let formattedContext = "";
+        if (d.last_summary) formattedContext += `📝 Last Summary: ${d.last_summary}\n`;
+        if (d.active_branch) formattedContext += `🌿 Active Branch: ${d.active_branch}\n`;
+        if (d.key_context) formattedContext += `💡 Key Context: ${d.key_context}\n`;
+        if (d.pending_todo?.length) {
+          formattedContext += `\n✅ Open TODOs:\n` + d.pending_todo.map((t: string) => `  - ${t}`).join("\n") + `\n`;
+        }
+        if (d.active_decisions?.length) {
+          formattedContext += `\n⚖️ Active Decisions:\n` + d.active_decisions.map((dec: string) => `  - ${dec}`).join("\n") + `\n`;
+        }
+        if (d.keywords?.length) {
+          formattedContext += `\n🔑 Keywords: ${d.keywords.join(", ")}\n`;
+        }
+        if (d.recent_sessions?.length) {
+          formattedContext += `\n⏳ Recent Sessions:\n` + d.recent_sessions.map((s: any) => `  [${s.session_date?.split("T")[0]}] ${s.summary}`).join("\n") + `\n`;
+        }
+
+        const version = d.version;
+        const versionNote = version
+          ? `\n\n🔑 Session version: ${version}. Pass expected_version: ${version} when saving handoff.\n` +
+            `_occ_instruction: When saving handoff state, you MUST pass expected_version: ${version} to prevent state collisions with other sessions.`
+          : "";
 
         return {
           contents: [{
-            uri: uri,
-            mimeType: "application/json",
-            text: JSON.stringify(resourceData, null, 2),
+            uri,
+            mimeType: "text/plain",
+            text: `📋 Session context for "${project}" (standard):\n\n${formattedContext.trim()}${versionNote}`,
           }],
         };
       } catch (error) {
@@ -462,7 +492,7 @@ export function createServer() {
         return {
           isError: true,
           contents: [{
-            uri: uri,
+            uri,
             mimeType: "text/plain",
             text: `Error reading resource: ${error instanceof Error ? error.message : String(error)}`,
           }],
