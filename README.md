@@ -573,28 +573,27 @@ Just add `"role"` to any of the core memory tools:
 - When loading *with* a role, Prism auto-injects a **Team Roster** block listing active teammates, roles, and tasks — no extra tool call needed
 - The Hivemind Radar widget in the Mind Palace dashboard shows agent activity in real time
 
-### Setting Your Role in Agent Startup Rules
+### Setting Your Agent Identity
 
-The easiest way to use roles is to hardcode your role in your AI assistant's startup prompt. The agent will always load the right memory lane automatically.
+The easiest way to configure your role and name is via the **Mind Palace Dashboard ⚙️ Settings → Agent Identity**:
 
-**Gemini / Antigravity (`~/.gemini/GEMINI.md`):**
+- **Default Role** — dropdown to select `dev`, `qa`, `pm`, `lead`, `security`, `ux`, or `global`
+- **Agent Name** — free text for your display name (e.g. `Dmitri`, `Dev Alex`, `QA Bot`)
 
-```markdown
-## Prism MCP Memory Auto-Load (CRITICAL)
-At the start of every new session, call `session_load_context` with:
-- project: "my-app", role: "dev"
-- project: "my-other-project", role: "dev"
-```
+Once set, **all memory and Hivemind tools automatically use these values** as fallbacks — no need to pass `role` or `agent_name` in every tool call.
 
-**Claude Code (`.clauderules` or `CLAUDE.md`):**
+> **Priority order:** explicit tool arg → dashboard setting → `"global"` (default)
+
+**Alternative — hardcode in your startup rules** (if you prefer prompt-level config):
 
 ```markdown
 ## Prism MCP Memory Auto-Load (CRITICAL)
 At the start of every new session, call session_load_context with:
-- project: "my-app", role: "qa"
+- project: "my-app", role: "dev"
+- project: "my-other-project", role: "dev"
 ```
 
-> **Tip:** Each agent instance gets a different role hardcoded in its prompt — one agent is `dev`, another is `qa`, another is `lead`. That's how true multi-agent role isolation works without any extra configuration.
+> **Tip:** For true multi-agent setups, each AI instance has its own Mind Palace dashboard — set a different identity per agent there rather than managing it in prompts.
 
 ---
 

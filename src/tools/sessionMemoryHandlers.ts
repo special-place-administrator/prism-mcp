@@ -21,6 +21,7 @@ import { getStorage } from "../storage/index.js";
 import { toKeywordArray } from "../utils/keywordExtractor.js";
 import { generateEmbedding } from "../utils/embeddingApi.js";
 import { getCurrentGitState, getGitDrift } from "../utils/git.js";
+import { getSetting } from "../storage/configStorage.js";
 
 // ─── Phase 1: Explainability & Memory Lineage ────────────────
 // These utilities provide structured tracing metadata for search operations.
@@ -75,6 +76,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
   debugLog(`[session_save_ledger] Extracted ${keywords.length} keywords: ${keywords.slice(0, 5).join(", ")}...`);
 
   // Save via storage backend
+  const effectiveRole = role || await getSetting("default_role", "global");
   const result = await storage.saveLedger({
     project,
     conversation_id,
@@ -84,7 +86,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
     files_changed: files_changed || [],
     decisions: decisions || [],
     keywords,
-    role: role || "global",  // v3.0: Hivemind role scoping
+    role: effectiveRole,  // v3.0: Hivemind role scoping (dashboard fallback)
   });
 
   // ─── Fire-and-forget embedding generation ───
@@ -168,6 +170,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
   }
 
   // Save via storage backend (OCC-aware)
+  const effectiveRole = role || await getSetting("default_role", "global");
   const data = await storage.saveHandoff(
     {
       project,
@@ -179,7 +182,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
       key_context: key_context ?? null,
       active_branch: active_branch ?? null,
       metadata,
-      role: role || "global",  // v3.0: Hivemind role scoping
+      role: effectiveRole,  // v3.0: Hivemind role scoping (dashboard fallback)
     },
     expected_version ?? null
   );
@@ -403,7 +406,8 @@ export async function sessionLoadContextHandler(args: unknown) {
   debugLog(`[session_load_context] Loading ${level} context for project="${project}"`);
 
   const storage = await getStorage();
-  const data = await storage.loadContext(project, level, PRISM_USER_ID, role);  // v3.0: pass role
+  const effectiveRole = role || await getSetting("default_role", "") || undefined;
+  const data = await storage.loadContext(project, level, PRISM_USER_ID, effectiveRole);  // v3.0: role with dashboard fallback
 
   if (!data) {
     return {

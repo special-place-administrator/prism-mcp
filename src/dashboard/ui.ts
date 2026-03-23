@@ -566,6 +566,37 @@ export function renderDashboardHTML(version: string): string {
             <option value="supabase">Supabase</option>
           </select>
         </div>
+
+        <div class="setting-section">Agent Identity</div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Default Role</div>
+            <div class="setting-desc">Used when no role is passed to memory/Hivemind tools</div>
+          </div>
+          <select class="setting-select" id="select-default-role" onchange="saveSetting('default_role', this.value)">
+            <option value="global">global (shared)</option>
+            <option value="dev">dev</option>
+            <option value="qa">qa</option>
+            <option value="pm">pm</option>
+            <option value="lead">lead</option>
+            <option value="security">security</option>
+            <option value="ux">ux</option>
+          </select>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Agent Name</div>
+            <div class="setting-desc">Display name shown in Hivemind Radar (e.g. Dmitri, Dev Alex)</div>
+          </div>
+          <input type="text" id="input-agent-name"
+            placeholder="e.g. Dmitri"
+            style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 130px;"
+            onchange="saveSetting('agent_name', this.value)"
+            oninput="clearTimeout(this._t); this._t=setTimeout(()=>saveSetting('agent_name',this.value),800)" />
+        </div>
+
         <span class="setting-saved" id="savedToast">Saved ✓</span>
       </div>
     </div>
@@ -856,6 +887,9 @@ export function renderDashboardHTML(version: string): string {
         if (s.PRISM_STORAGE) {
           document.getElementById('storageBackendSelect').value = s.PRISM_STORAGE;
         }
+        // Agent Identity
+        if (s.default_role) document.getElementById('select-default-role').value = s.default_role;
+        if (s.agent_name) document.getElementById('input-agent-name').value = s.agent_name;
       } catch(e) { console.warn('Settings load failed:', e); }
     }
 
