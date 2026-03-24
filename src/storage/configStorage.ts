@@ -1,6 +1,7 @@
 import { createClient } from "@libsql/client";
-import { resolve } from "path";
+import { resolve, dirname } from "path";
 import { homedir } from "os";
+import { existsSync, mkdirSync } from "fs";
 
 // We use a small, dedicated DB just for configuration settings.
 // This solves the chicken-and-egg problem: we need to know WHICH
@@ -28,6 +29,13 @@ let settingsCache: Record<string, string> | null = null;
 
 function getClient() {
   if (!configClient) {
+    // Ensure the directory exists before opening the DB.
+    // In Docker/CI (e.g. Glama), ~/.prism-mcp/ doesn't exist yet,
+    // and libSQL throws SQLITE_CANTOPEN (error 14) without it.
+    const dir = dirname(CONFIG_PATH);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
     configClient = createClient({
       url: `file:${CONFIG_PATH}`,
     });
@@ -38,20 +46,29 @@ function getClient() {
 export async function initConfigStorage() {
   if (initialized) return;
 
-  const client = getClient();
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS system_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+  try {
+    const client = getClient();
+    await client.execute(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-  // Preload all rows into the cache so subsequent reads are zero-cost.
-  const rs = await client.execute("SELECT key, value FROM system_settings");
-  settingsCache = {};
-  for (const row of rs.rows) {
-    settingsCache[row.key as string] = row.value as string;
+    // Preload all rows into the cache so subsequent reads are zero-cost.
+    const rs = await client.execute("SELECT key, value FROM system_settings");
+    settingsCache = {};
+    for (const row of rs.rows) {
+      settingsCache[row.key as string] = row.value as string;
+    }
+  } catch (err) {
+    // Graceful degradation: if the DB can't be opened (e.g. read-only
+    // filesystem in a sandboxed container), fall back to an empty cache.
+    // getSettingSync() will return defaults; getSetting()/setSetting()
+    // will attempt to re-open the DB on first call.
+    console.error(`[configStorage] Failed to initialize (non-fatal): ${err}`);
+    settingsCache = {};
   }
 
   initialized = true;
