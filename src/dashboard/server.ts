@@ -22,7 +22,9 @@ import { exec } from "child_process";
 import { getStorage } from "../storage/index.js";
 import { PRISM_USER_ID, SERVER_CONFIG } from "../config.js";
 import { renderDashboardHTML } from "./ui.js";
-import { getAllSettings, setSetting } from "../storage/configStorage.js";
+import { getAllSettings, setSetting, getSetting } from "../storage/configStorage.js";
+import { compactLedgerHandler } from "../tools/compactionHandler.js";
+
 
 const PORT = parseInt(process.env.PRISM_DASHBOARD_PORT || "3000", 10);
 
@@ -82,10 +84,23 @@ async function killPortHolder(port: number): Promise<void> {
 }
 
 export async function startDashboardServer(): Promise<void> {
-  // Clean up any zombie dashboard process from a previous session
-  await killPortHolder(PORT);
+  // Fire-and-forget port cleanup — don't block server start.
+  // Previously awaiting this added 300ms+ delay from lsof + setTimeout,
+  // starving the MCP stdio transport during the init handshake.
+  killPortHolder(PORT).catch(() => {});
 
-  const storage = await getStorage();
+  // Lazy storage accessor — returns null if storage isn't ready yet.
+  // API routes gracefully degrade with 503 instead of blocking startup.
+  let _storage: Awaited<ReturnType<typeof getStorage>> | null = null;
+  const getStorageSafe = async (): Promise<Awaited<ReturnType<typeof getStorage>> | null> => {
+    if (_storage) return _storage;
+    try {
+      _storage = await getStorage();
+      return _storage;
+    } catch {
+      return null;
+    }
+  };
 
   const httpServer = http.createServer(async (req, res) => {
     // CORS headers for local dev
@@ -112,7 +127,9 @@ export async function startDashboardServer(): Promise<void> {
 
       // ─── API: List all projects ───
       if (url.pathname === "/api/projects") {
-        const projects = await storage.listProjects();
+        const s = await getStorageSafe();
+        if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+        const projects = await s.listProjects();
         res.writeHead(200, { "Content-Type": "application/json" });
         return res.end(JSON.stringify({ projects }));
       }
@@ -125,15 +142,17 @@ export async function startDashboardServer(): Promise<void> {
           return res.end(JSON.stringify({ error: "Missing ?name= parameter" }));
         }
 
-        const context = await storage.loadContext(projectName, "deep", PRISM_USER_ID);
-        const ledger = await storage.getLedgerEntries({
+        const s = await getStorageSafe();
+        if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+        const context = await s.loadContext(projectName, "deep", PRISM_USER_ID);
+        const ledger = await s.getLedgerEntries({
           project: `eq.${projectName}`,
           order: "created_at.desc",
           limit: "20",
         });
         let history: unknown[] = [];
         try {
-          history = await storage.getHistory(projectName, PRISM_USER_ID, 10);
+          history = await s.getHistory(projectName, PRISM_USER_ID, 10);
         } catch {
           // History may not exist for all projects
         }
@@ -146,7 +165,9 @@ export async function startDashboardServer(): Promise<void> {
       if (url.pathname === "/api/health" && req.method === "GET") {
         try {
           const { runHealthCheck } = await import("../utils/healthCheck.js");
-          const stats = await storage.getHealthStats(PRISM_USER_ID);
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const stats = await s.getHealthStats(PRISM_USER_ID);
           const report = runHealthCheck(stats);
           res.writeHead(200, { "Content-Type": "application/json" });
           return res.end(JSON.stringify(report));
@@ -169,7 +190,9 @@ export async function startDashboardServer(): Promise<void> {
       if (url.pathname === "/api/health/cleanup" && req.method === "POST") {
         try {
           const { runHealthCheck } = await import("../utils/healthCheck.js");
-          const stats = await storage.getHealthStats(PRISM_USER_ID);
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const stats = await s.getHealthStats(PRISM_USER_ID);
           const report = runHealthCheck(stats);
 
           // Collect orphaned handoff projects from the health issues
@@ -178,7 +201,7 @@ export async function startDashboardServer(): Promise<void> {
 
           for (const { project } of orphaned) {
             try {
-              await storage.deleteHandoff(project, PRISM_USER_ID);
+              await s.deleteHandoff(project, PRISM_USER_ID);
               cleaned.push(project);
               console.error(`[Dashboard] Cleaned up orphaned handoff: ${project}`);
             } catch (delErr) {
@@ -241,7 +264,9 @@ export async function startDashboardServer(): Promise<void> {
       if (url.pathname === "/api/graph") {
         // Fetch recent ledger entries to build the graph
         // We look at the last 100 entries to keep the graph relevant but performant
-        const entries = await storage.getLedgerEntries({
+        const s = await getStorageSafe();
+        if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+        const entries = await s.getLedgerEntries({
           limit: "100",
           order: "created_at.desc",
           select: "project,keywords",
@@ -313,7 +338,9 @@ export async function startDashboardServer(): Promise<void> {
           return res.end(JSON.stringify({ error: "Missing ?project= parameter" }));
         }
         try {
-          const team = await storage.listTeam(projectName, PRISM_USER_ID);
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const team = await s.listTeam(projectName, PRISM_USER_ID);
           res.writeHead(200, { "Content-Type": "application/json" });
           return res.end(JSON.stringify({ team }));
         } catch {
@@ -355,9 +382,173 @@ export async function startDashboardServer(): Promise<void> {
 
       }
 
+      // ─── API: Memory Analytics (v3.1) ────────────────────
+      if (url.pathname === "/api/analytics" && req.method === "GET") {
+        const projectName = url.searchParams.get("project");
+        if (!projectName) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Missing ?project= parameter" }));
+        }
+        try {
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const analytics = await s.getAnalytics(projectName, PRISM_USER_ID);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify(analytics));
+        } catch (err) {
+          console.error("[Dashboard] Analytics error:", err);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({
+            totalEntries: 0, totalRollups: 0, rollupSavings: 0,
+            avgSummaryLength: 0, sessionsByDay: [],
+          }));
+        }
+      }
+
+      // ─── API: Retention (TTL) Settings (v3.1) ──────────────
+      // GET /api/retention?project= → current TTL setting
+      // POST /api/retention → { project, ttl_days } → saves + runs sweep
+      if (url.pathname === "/api/retention") {
+        if (req.method === "GET") {
+          const projectName = url.searchParams.get("project");
+          if (!projectName) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: "Missing ?project= parameter" }));
+          }
+          const ttlRaw = await getSetting(`ttl:${projectName}`, "0");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ project: projectName, ttl_days: parseInt(ttlRaw, 10) || 0 }));
+        }
+
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          const { project, ttl_days } = JSON.parse(body || "{}");
+          if (!project || ttl_days === undefined) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: "project and ttl_days required" }));
+          }
+          if (ttl_days > 0 && ttl_days < 7) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: "Minimum TTL is 7 days" }));
+          }
+          await setSetting(`ttl:${project}`, String(ttl_days));
+          let expired = 0;
+          if (ttl_days > 0) {
+            const s = await getStorageSafe();
+            if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+            const result = await s.expireByTTL(project, ttl_days, PRISM_USER_ID);
+            expired = result.expired;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: true, project, ttl_days, expired }));
+        }
+      }
+
+      // ─── API: Compact Now (v3.1 — Dashboard button) ──────────
+      if (url.pathname === "/api/compact" && req.method === "POST") {
+        const body = await readBody(req);
+        const { project } = JSON.parse(body || "{}");
+        if (!project) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "project required" }));
+        }
+        try {
+          const result = await compactLedgerHandler({ project });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: true, result }));
+        } catch (err) {
+          console.error("[Dashboard] Compact error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: false, error: "Compaction failed" }));
+        }
+      }
+
+      // ─── API: PKM Export — Obsidian/Logseq ZIP (v3.1) ──────
+      if (url.pathname === "/api/export" && req.method === "GET") {
+        const projectName = url.searchParams.get("project");
+        if (!projectName) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Missing ?project= parameter" }));
+        }
+        try {
+          // Lazy-import fflate to keep startup fast
+          const { strToU8, zipSync } = await import("fflate");
+
+          // Fetch all active ledger entries for this project
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const entries = await s.getLedgerEntries({
+            project: `eq.${projectName}`,
+            order: "created_at.asc",
+            limit: "1000",
+          }) as Array<Record<string, unknown>>;
+
+          const files: Record<string, Uint8Array> = {};
+
+          // One MD file per session
+          for (const entry of entries) {
+            const date = (entry.created_at as string | undefined)?.slice(0, 10) ?? "unknown";
+            const id = (entry.id as string | undefined)?.slice(0, 8) ?? "xxxxxxxx";
+            const filename = `${projectName}/${date}-${id}.md`;
+
+            const todos = Array.isArray(entry.todos) ? (entry.todos as string[]) : [];
+            const decisions = Array.isArray(entry.decisions) ? (entry.decisions as string[]) : [];
+            const files_changed = Array.isArray(entry.files_changed) ? (entry.files_changed as string[]) : [];
+            const tags = ((Array.isArray(entry.keywords) ? entry.keywords : []) as string[]).slice(0, 10);
+
+            const content = [
+              `# Session: ${date}`,
+              ``,
+              `**Project:** ${projectName}`,
+              `**Date:** ${date}`,
+              `**Role:** ${(entry.role as string) || "global"}`,
+              tags.length ? `**Tags:** ${tags.map(t => `#${t.replace(/\s+/g, "_")}`).join(" ")}` : "",
+              ``,
+              `## Summary`,
+              ``,
+              entry.summary as string,
+              ``,
+              todos.length ? `## TODOs\n\n${todos.map(t => `- [ ] ${t}`).join("\n")}` : "",
+              decisions.length ? `## Decisions\n\n${decisions.map(d => `- ${d}`).join("\n")}` : "",
+              files_changed.length ? `## Files Changed\n\n${files_changed.map(f => `- \`${f}\``).join("\n")}` : "",
+            ].filter(Boolean).join("\n");
+
+            files[filename] = strToU8(content);
+          }
+
+          // Index file linking all sessions
+          const indexLines = [
+            `# ${projectName} — Session Index`,
+            ``,
+            `> Exported from Prism MCP on ${new Date().toISOString().slice(0, 10)}`,
+            ``,
+            ...entries.map(e => {
+              const d = (e.created_at as string | undefined)?.slice(0, 10) ?? "unknown";
+              const i = (e.id as string | undefined)?.slice(0, 8) ?? "xxxxxxxx";
+              return `- [[${projectName}/${d}-${i}]]`;
+            }),
+          ];
+          files[`${projectName}/_index.md`] = strToU8(indexLines.join("\n"));
+
+          const zipped = zipSync(files, { level: 6 });
+
+          res.writeHead(200, {
+            "Content-Type": "application/zip",
+            "Content-Disposition": `attachment; filename="prism-export-${projectName}-${Date.now()}.zip"`,
+            "Content-Length": String(zipped.byteLength),
+          });
+          return res.end(Buffer.from(zipped));
+        } catch (err) {
+          console.error("[Dashboard] PKM export error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Export failed" }));
+        }
+      }
+
       // ─── 404 ───
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not found");
+
 
     } catch (error) {
       console.error("[Dashboard] Error handling request:", error);
@@ -381,4 +572,30 @@ export async function startDashboardServer(): Promise<void> {
   httpServer.listen(PORT, () => {
     console.error(`[Prism] 🧠 Mind Palace Dashboard → http://localhost:${PORT}`);
   });
+
+  // ─── v3.1: TTL Sweep — runs at startup + every 12 hours ───────────
+  async function runTtlSweep() {
+    try {
+      const allSettings = await getAllSettings();
+      for (const [key, val] of Object.entries(allSettings)) {
+        if (!key.startsWith("ttl:")) continue;
+        const project = key.replace("ttl:", "");
+        const ttlDays = parseInt(val, 10);
+        if (!ttlDays || ttlDays <= 0) continue;
+        const s = await getStorageSafe();
+        if (!s) continue;
+        const result = await s.expireByTTL(project, ttlDays, PRISM_USER_ID);
+        if (result.expired > 0) {
+          console.error(`[Dashboard] TTL sweep: expired ${result.expired} entries for "${project}" (ttl=${ttlDays}d)`);
+        }
+      }
+    } catch (err) {
+      console.error("[Dashboard] TTL sweep error (non-fatal):", err);
+    }
+  }
+
+  // Run immediately on startup, then every 12 hours
+  runTtlSweep().catch(() => {});
+  setInterval(() => { runTtlSweep().catch(() => {}); }, 12 * 60 * 60 * 1000);
 }
+

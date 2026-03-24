@@ -403,4 +403,40 @@ export interface StorageBackend {
    * Retrieve all dashboard settings as a key→value map.
    */
   getAllSettings(): Promise<Record<string, string>>;
+
+  // ─── v3.1: Memory Analytics ──────────────────────────────────
+
+  /**
+   * Return aggregate analytics for a project's memory usage.
+   * Used by the Mind Palace Analytics dashboard card.
+   */
+  getAnalytics(project: string, userId: string): Promise<AnalyticsData>;
+
+  // ─── v3.1: TTL / Automated Data Retention ────────────────────
+
+  /**
+   * Soft-delete ledger entries older than ttlDays for a project.
+   * Skips rollup entries (is_rollup = true) — only expires raw sessions.
+   * Returns count of expired entries.
+   */
+  expireByTTL(project: string, ttlDays: number, userId: string): Promise<{ expired: number }>;
+}
+
+// ─── v3.1 Types ────────────────────────────────────────────────
+
+/**
+ * Analytics data for a single project.
+ * Returned by StorageBackend.getAnalytics().
+ */
+export interface AnalyticsData {
+  /** Total active (non-archived, non-deleted) ledger entries */
+  totalEntries: number;
+  /** Total rollup/compaction entries */
+  totalRollups: number;
+  /** Estimated raw entries replaced by rollups (sum of rollup_count) */
+  rollupSavings: number;
+  /** Average character length of session summaries (proxy for token cost) */
+  avgSummaryLength: number;
+  /** Session count per day for the last 14 days */
+  sessionsByDay: Array<{ date: string; count: number }>;
 }

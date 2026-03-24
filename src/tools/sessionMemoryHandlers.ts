@@ -42,9 +42,16 @@ import {
   isBackfillEmbeddingsArgs,
   isMemoryHistoryArgs,
   isMemoryCheckoutArgs,
-  isSessionHealthCheckArgs,   // v2.2.0: health check type guard
-  isSessionForgetMemoryArgs,  // Phase 2: GDPR-compliant memory deletion type guard
+  isSessionHealthCheckArgs,        // v2.2.0: health check type guard
+  isSessionForgetMemoryArgs,       // Phase 2: GDPR-compliant memory deletion type guard
+  isKnowledgeSetRetentionArgs,     // v3.1: TTL retention policy type guard
 } from "./sessionMemoryDefinitions.js";
+
+// v3.1: In-memory debounce lock for auto-compaction.
+// Prevents multiple concurrent Gemini compaction tasks for the same project
+// when many agents call session_save_ledger at the same time.
+const activeCompactions = new Set<string>();
+
 
 // ─── v0.4.0: Import server type for resource notifications ───
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -109,6 +116,34 @@ export async function sessionSaveLedgerHandler(args: unknown) {
     }
   }
 
+  // ─── Fire-and-forget auto-compact ────────────────────────────
+  // If the user has opted into auto-compact (via dashboard Settings → Boot),
+  // run a health check after saving and compact if brain is degraded/unhealthy.
+  // Uses debounce Set to prevent concurrent Gemini calls for same project.
+  getSetting("compaction_auto", "false").then(async (autoCompact) => {
+    if (autoCompact !== "true") return;
+    if (activeCompactions.has(project)) {
+      debugLog(`[auto-compact] Skipped for "${project}" — compaction already in progress`);
+      return;
+    }
+    activeCompactions.add(project);
+    try {
+      const { runHealthCheck } = await import("../utils/healthCheck.js");
+      const { compactLedgerHandler } = await import("./compactionHandler.js");
+      const healthStats = await storage.getHealthStats(PRISM_USER_ID);
+      const report = runHealthCheck(healthStats);
+      if (report.status === "degraded" || report.status === "unhealthy") {
+        debugLog(`[auto-compact] Brain "${project}" is ${report.status} — triggering compaction`);
+        await compactLedgerHandler({ project });
+        debugLog(`[auto-compact] Compaction complete for "${project}"`);
+      }
+    } catch (err) {
+      console.error(`[auto-compact] Non-fatal error for "${project}": ${err}`);
+    } finally {
+      activeCompactions.delete(project);
+    }
+  }).catch(() => {/* getSetting non-fatal */});
+
   return {
     content: [{
       type: "text",
@@ -123,6 +158,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
     isError: false,
   };
 }
+
 
 // ─── Save Handoff Handler ─────────────────────────────────────
 
@@ -1704,4 +1740,67 @@ export async function sessionForgetMemoryHandler(args: unknown) {
       isError: true,
     };
   }
+}
+
+
+// ─── v3.1: Knowledge Set Retention Handler ────────────────
+
+/**
+ * Set a TTL (data retention policy) for a project.
+ * Saves the policy to configStorage, then immediately runs one sweep
+ * to expire any entries that are already over the TTL.
+ */
+export async function knowledgeSetRetentionHandler(args: unknown) {
+  if (!isKnowledgeSetRetentionArgs(args)) {
+    throw new Error("Invalid arguments for knowledge_set_retention");
+  }
+
+  const { project, ttl_days } = args;
+
+  if (ttl_days < 0) {
+    return {
+      content: [{ type: "text", text: "Error: ttl_days must be 0 (disabled) or a positive integer." }],
+      isError: true,
+    };
+  }
+
+  if (ttl_days > 0 && ttl_days < 7) {
+    return {
+      content: [{ type: "text", text: "Error: Minimum TTL is 7 days to prevent accidental data loss." }],
+      isError: true,
+    };
+  }
+
+  const storage = await getStorage();
+
+  // Save policy to configStorage so server.ts sweep can read it
+  await storage.setSetting(`ttl:${project}`, String(ttl_days));
+
+  if (ttl_days === 0) {
+    return {
+      content: [{
+        type: "text",
+        text: `✅ Data retention **disabled** for project \"${project}\".\n\nEntries will be kept indefinitely.`,
+      }],
+      isError: false,
+    };
+  }
+
+  // Run an immediate sweep for entries already past TTL
+  const result = await storage.expireByTTL(project, ttl_days, PRISM_USER_ID);
+
+  return {
+    content: [{
+      type: "text",
+      text:
+        `⏱️ **Retention policy set** for project \"${project}\":\n\n` +
+        `- Auto-expire entries older than: **${ttl_days} days**\n` +
+        `- Sweep runs on: server startup + every 12 hours\n` +
+        `- Rollup/compaction entries: **never expired**\n\n` +
+        (result.expired > 0
+          ? `🗑️ Immediately expired **${result.expired}** entries already past the ${ttl_days}-day threshold.`
+          : `✅ No existing entries exceeded the ${ttl_days}-day threshold.`),
+    }],
+    isError: false,
+  };
 }

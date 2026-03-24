@@ -55,52 +55,49 @@ import { tmpdir } from "os";
  * @returns Object with `storage` (SqliteStorage instance) and `cleanup` function
  */
 export async function createTestDb(testName: string) {
-  // Generate a unique temp "home" directory for this test
-  // Example: /tmp/prism-test-my-test-1711190400000/
-  const fakeHome = join(tmpdir(), `prism-test-${testName}-${Date.now()}`);
-  mkdirSync(fakeHome, { recursive: true });
+  // Generate a unique DB path per test suite.
+  // Timestamp + random suffix prevents collisions even under parallel execution.
+  const uniqueDir = join(
+    tmpdir(),
+    `prism-test-${testName}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
+  mkdirSync(uniqueDir, { recursive: true });
+  const dbPath = join(uniqueDir, "data.db");
 
-  // Save the real HOME so we can restore it after initialization
-  const originalHome = process.env.HOME;
-  process.env.HOME = fakeHome;
+  // ── True path injection — no env vars, no global state ─────────────────
+  //
+  // We pass dbPath directly to storage.initialize(dbPath). This is the only
+  // correct isolation mechanism:
+  //
+  //   ❌ process.env.HOME mutation — process-global, races across parallel suites
+  //   ❌ PRISM_DB_PATH env var    — still process-global, same race on async boundary
+  //   ✅ initialize(dbPath)       — argument-scoped, zero observable global state
+  //
+  // SqliteStorage.initialize() opens a libsql connection to the injected path
+  // and holds it for the lifetime of the instance. The path arg is not read
+  // again after initialize() returns, so no race is possible at any point.
+  const { SqliteStorage } = await import("../../src/storage/sqlite.js");
+  const storage = new SqliteStorage();
+  await storage.initialize(dbPath);
 
-  try {
-    // Dynamically import SqliteStorage to avoid circular dependency issues
-    // and to ensure the module picks up our overridden HOME
-    const { SqliteStorage } = await import("../../src/storage/sqlite.js");
-
-    // Create and initialize — this runs all migrations including v3.0
-    // (agent_registry, system_settings, role columns, etc.)
-    const storage = new SqliteStorage();
-    await storage.initialize();
-
-    // Restore the real HOME immediately after initialization
-    // The storage instance keeps its db connection to the test DB
-    process.env.HOME = originalHome;
-
-    return {
-      storage,
-      fakeHome,
-      /**
-       * Cleanup function: removes the entire temp home directory.
-       * Call this in afterAll() or afterEach() to prevent disk leaks.
-       */
-      cleanup: () => {
-        process.env.HOME = originalHome;
-        try {
-          if (existsSync(fakeHome)) {
-            rmSync(fakeHome, { recursive: true, force: true });
-          }
-        } catch {
-          // Non-critical — OS will clean tmpdir eventually
+  return {
+    storage,
+    dbPath,
+    /**
+     * Cleanup: removes the temp directory.
+     * Call in afterAll() or afterEach() to prevent disk leaks.
+     */
+    cleanup: () => {
+      try { (storage as any).close?.(); } catch { /* non-fatal */ }
+      try {
+        if (existsSync(uniqueDir)) {
+          rmSync(uniqueDir, { recursive: true, force: true });
         }
-      },
-    };
-  } catch (err) {
-    // Always restore HOME even if initialization fails
-    process.env.HOME = originalHome;
-    throw err;
-  }
+      } catch {
+        // OS will clean tmpdir eventually — non-critical
+      }
+    },
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────

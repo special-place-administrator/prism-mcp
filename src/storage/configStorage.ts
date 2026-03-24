@@ -19,6 +19,13 @@ const CONFIG_PATH = resolve(homedir(), ".prism-mcp", "prism-config.db");
 let configClient: ReturnType<typeof createClient> | null = null;
 let initialized = false;
 
+// ─── In-memory settings cache ──────────────────────────────────────
+// Preloaded during initConfigStorage() so that hot-path MCP handlers
+// (e.g. ReadResourceRequestSchema) can read settings synchronously
+// without opening an additional SQLite round-trip and stalling the
+// MCP stdio handshake (which causes a black-screen on startup).
+let settingsCache: Record<string, string> | null = null;
+
 function getClient() {
   if (!configClient) {
     configClient = createClient({
@@ -40,11 +47,34 @@ export async function initConfigStorage() {
     )
   `);
 
+  // Preload all rows into the cache so subsequent reads are zero-cost.
+  const rs = await client.execute("SELECT key, value FROM system_settings");
+  settingsCache = {};
+  for (const row of rs.rows) {
+    settingsCache[row.key as string] = row.value as string;
+  }
+
   initialized = true;
+}
+
+/**
+ * Synchronous setting read — served from the in-memory cache.
+ * Returns defaultValue if the cache hasn't been populated yet (e.g. very
+ * early startup before initConfigStorage() has been called) or if the key
+ * doesn't exist. Safe to call from any MCP request handler without triggering
+ * a SQLite round-trip.
+ */
+export function getSettingSync(key: string, defaultValue = ""): string {
+  if (!settingsCache) return defaultValue;
+  return settingsCache[key] ?? defaultValue;
 }
 
 export async function getSetting(key: string, defaultValue = ""): Promise<string> {
   await initConfigStorage();
+  // Serve from cache when warm (the common case after startup).
+  if (settingsCache && key in settingsCache) {
+    return settingsCache[key];
+  }
   const client = getClient();
   const rs = await client.execute({
     sql: "SELECT value FROM system_settings WHERE key = ?",
@@ -52,7 +82,10 @@ export async function getSetting(key: string, defaultValue = ""): Promise<string
   });
 
   if (rs.rows.length > 0) {
-    return rs.rows[0].value as string;
+    const value = rs.rows[0].value as string;
+    // Populate cache entry for future reads.
+    if (settingsCache) settingsCache[key] = value;
+    return value;
   }
   return defaultValue;
 }
@@ -68,13 +101,21 @@ export async function setSetting(key: string, value: string): Promise<void> {
     `,
     args: [key, value],
   });
+  // Keep the cache in sync so getSettingSync() reflects the new value immediately.
+  if (settingsCache) {
+    settingsCache[key] = value;
+  }
 }
 
 export async function getAllSettings(): Promise<Record<string, string>> {
   await initConfigStorage();
+  // Return a snapshot of the cache (avoids a redundant DB round-trip).
+  if (settingsCache) {
+    return { ...settingsCache };
+  }
   const client = getClient();
   const rs = await client.execute("SELECT key, value FROM system_settings");
-  
+
   const settings: Record<string, string> = {};
   for (const row of rs.rows) {
     settings[row.key as string] = row.value as string;

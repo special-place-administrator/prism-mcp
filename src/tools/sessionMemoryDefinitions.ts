@@ -745,3 +745,48 @@ export function isSessionForgetMemoryArgs(
     typeof (args as { memory_id: string }).memory_id === "string"
   );
 }
+
+// ─── v3.1: Knowledge Set Retention (TTL) ─────────────────────
+
+export const KNOWLEDGE_SET_RETENTION_TOOL: Tool = {
+  name: "knowledge_set_retention",
+  description:
+    "Set an automatic data retention policy (TTL) for a project's memory. " +
+    "Entries older than ttl_days will be soft-deleted (archived) automatically " +
+    "on every server startup and every 12 hours while running.\n\n" +
+    "**Use cases:**\n" +
+    "- Set `ttl_days: 90` to auto-expire sessions older than 3 months\n" +
+    "- Set `ttl_days: 0` to disable auto-expiry (default)\n\n" +
+    "**Note:** Rollup/compaction entries are never expired — only raw sessions.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      project: {
+        type: "string",
+        description: "Project to set retention policy for.",
+      },
+      ttl_days: {
+        type: "integer",
+        description:
+          "Entries older than this many days are auto-expired. " +
+          "Set to 0 to disable. Minimum: 7 days when enabled.",
+        minimum: 0,
+      },
+    },
+    required: ["project", "ttl_days"],
+  },
+};
+
+export function isKnowledgeSetRetentionArgs(
+  args: unknown
+): args is { project: string; ttl_days: number } {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    "project" in args &&
+    typeof (args as { project: string }).project === "string" &&
+    "ttl_days" in args &&
+    typeof (args as { ttl_days: number }).ttl_days === "number"
+  );
+}
+

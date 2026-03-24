@@ -14,7 +14,7 @@
 
 ## Table of Contents
 
-- [What's New (v3.0.1)](#whats-new-in-v301---agent-identity--brain-clean-up-)
+- [What's New (v3.1.0)](#whats-new-in-v310---memory-lifecycle-)
 - [How Prism Compares](#how-prism-compares)
 - [Quick Start](#quick-start-zero-config--local-mode)
 - [Mind Palace Dashboard](#-the-mind-palace-dashboard)
@@ -39,7 +39,18 @@
 
 ---
 
-## What's New in v3.0.1 — Agent Identity & Brain Clean-up 🧹
+## What's New in v3.1.0 — Memory Lifecycle 🔄
+
+| Feature | Description |
+|---|---|
+| 📊 **Memory Analytics** | New **Memory Analytics** card in the dashboard — 14-day sparkline chart, active sessions count, rollup savings, and average context richness. Powered by `getAnalytics()` on both SQLite and Supabase backends. |
+| ⏳ **Automated Data Retention (TTL)** | Set a per-project data retention policy via `knowledge_set_retention` MCP tool or the dashboard **Lifecycle Controls** card. Entries older than the TTL are soft-deleted (GDPR-compliant `archived_at` tombstone) every 12 hours automatically. Rollups are never expired. Minimum 7 days to prevent accidental mass-delete. |
+| 🗜️ **Smart Auto-Compaction** | After every `session_save_ledger`, Prism runs a background health check and triggers compaction automatically if the brain is degraded or unhealthy — gated by `compaction_auto` setting and debounced per-project to prevent concurrent Gemini calls. **Compact Now** button also available in the dashboard. |
+| 📦 **PKM Export (Obsidian / Logseq)** | Export any project's full memory as a ZIP archive of Markdown files — one file per session with YAML-like frontmatter, TODOs, decisions, files-changed, and `#hashtag` keywords. Includes an `_index.md` with `[[wikilink]]` references. Click **Export ZIP** in the dashboard Lifecycle Controls card. |
+| 🧪 **Expanded Test Suite** | 37 new Vitest tests (95 total) — covers analytics queries, TTL soft-delete idempotency, rollup preservation, `activeCompactions` Set memory-leak prevention, type guards, export Markdown structure, and TTL sweep scheduler contracts. |
+
+<details>
+<summary><strong>What's in v3.0.1 — Agent Identity & Brain Clean-up 🧹</strong></summary>
 
 | Feature | Description |
 |---|---|
@@ -47,6 +58,8 @@
 | 👤 **Agent Identity Settings** | Dashboard Settings → Agent Identity panel lets you set a **Default Role** (`dev`, `qa`, `pm`…) and **Agent Name** (e.g. `Dmitri`). Both values auto-apply as fallbacks in all memory and Hivemind tools — no need to pass them per call. |
 | 📜 **Role-Scoped Skills** | Each agent role can have its own persistent skill/rules document stored in the dashboard (⚙️ Settings → Skills). It is automatically injected into every `session_load_context` response so the agent boots with its rules pre-loaded. |
 | 🔤 **Resource Formatting Fix** | `memory://{project}/handoff` resources now render as formatted plain text (Last Summary, TODOs, Keywords) instead of a raw JSON blob — readable in Claude Desktop's paperclip attach panel. |
+
+</details>
 
 <details>
 <summary><strong>What's in v3.0.0 — Agent Hivemind 🐝</strong></summary>
@@ -467,6 +480,12 @@ graph TB
 | `knowledge_forget` | Prune outdated or incorrect memories (4 modes + dry_run) |
 | `session_search_memory` | Vector similarity search across all sessions |
 | `session_compact_ledger` | Auto-compact old ledger entries via Gemini-powered summarization |
+
+### v3.1 Lifecycle Tools
+
+| Tool | Purpose |
+|------|---------|
+| `knowledge_set_retention` | Set a per-project TTL retention policy (0 = disabled, min 7 days). Immediately expires overdue entries. |
 
 ### v2.0 Advanced Memory Tools
 

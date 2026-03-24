@@ -445,6 +445,54 @@ export function renderDashboardHTML(version: string): string {
       flex-shrink: 0; animation: pulseDot 2s ease-in-out infinite;
     }
     @keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ─── Memory Analytics (v3.1) ─── */
+    .sparkline {
+      display: flex; align-items: flex-end; gap: 3px;
+      height: 48px; margin: 0.75rem 0 0.25rem;
+    }
+    .spark-bar {
+      flex: 1; background: rgba(139,92,246,0.35);
+      border-radius: 3px 3px 0 0; min-height: 3px;
+      transition: background 0.2s;
+    }
+    .spark-bar:hover { background: var(--accent-purple); }
+    .analytics-stats {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+    .astat {
+      background: rgba(15,23,42,0.5); border-radius: var(--radius-sm);
+      padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.15rem;
+    }
+    .astat-val { font-size: 1.1rem; font-weight: 700; color: var(--accent-purple); font-family: var(--font-mono); }
+    .astat-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ─── Lifecycle Controls (v3.1) ─── */
+    .lc-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; }
+    .lc-btn {
+      flex: 1; padding: 0.5rem 0.6rem; font-size: 0.8rem; font-weight: 600;
+      border-radius: var(--radius-sm); border: none; cursor: pointer;
+      transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+    }
+    .lc-btn.compact { background: rgba(139,92,246,0.15); color: var(--accent-purple); border: 1px solid rgba(139,92,246,0.3); }
+    .lc-btn.compact:hover { background: rgba(139,92,246,0.3); }
+    .lc-btn.export { background: rgba(16,185,129,0.12); color: var(--accent-green); border: 1px solid rgba(16,185,129,0.3); }
+    .lc-btn.export:hover { background: rgba(16,185,129,0.25); }
+    .lc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .ttl-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+    .ttl-input {
+      width: 70px; background: var(--bg-secondary); border: 1px solid var(--border-glass);
+      color: var(--text-primary); border-radius: 6px; padding: 0.3rem 0.5rem;
+      font-size: 0.82rem; font-family: var(--font-mono); text-align: center;
+    }
+    .ttl-label { font-size: 0.8rem; color: var(--text-secondary); }
+    .ttl-save-btn {
+      margin-left: auto; padding: 0.3rem 0.75rem; font-size: 0.78rem; font-weight: 600;
+      background: rgba(245,158,11,0.15); color: var(--accent-amber);
+      border: 1px solid rgba(245,158,11,0.3); border-radius: 6px; cursor: pointer; transition: all 0.2s;
+    }
+    .ttl-save-btn:hover { background: rgba(245,158,11,0.3); }
   </style>
 </head>
 <body>
@@ -510,7 +558,42 @@ export function renderDashboardHTML(version: string): string {
           <div class="health-issues" id="healthIssues"></div>
         </div>
 
-        <!-- Morning Briefing -->
+        <!-- Memory Analytics (v3.1) -->
+        <div class="card" id="analyticsCard" style="display:none">
+          <div class="card-title">
+            <span class="dot" style="background:var(--accent-purple)"></span>
+            Memory Analytics 📊
+          </div>
+          <div class="sparkline" id="sparkline" title="Sessions per day (last 14 days)"></div>
+          <div style="font-size:0.68rem;color:var(--text-muted);text-align:right">Sessions / day (14d)</div>
+          <div class="analytics-stats">
+            <div class="astat"><div class="astat-val" id="astat-entries">—</div><div class="astat-label">Active sessions</div></div>
+            <div class="astat"><div class="astat-val" id="astat-rollups">—</div><div class="astat-label">Rollups</div></div>
+            <div class="astat"><div class="astat-val" id="astat-savings">—</div><div class="astat-label">Entries saved</div></div>
+            <div class="astat"><div class="astat-val" id="astat-avglen">—</div><div class="astat-label">Avg summary chars</div></div>
+          </div>
+        </div>
+
+        <!-- Lifecycle Controls (v3.1) -->
+        <div class="card" id="lifecycleCard" style="display:none">
+          <div class="card-title"><span class="dot" style="background:var(--accent-amber)"></span> Lifecycle Controls ⚙️</div>
+          <div class="lc-row">
+            <button class="lc-btn compact" id="compactBtn" onclick="compactNow()">
+              🗜️ Compact Now
+            </button>
+            <button class="lc-btn export" id="exportBtn" onclick="exportPKM()">
+              📦 Export ZIP
+            </button>
+          </div>
+          <div class="ttl-row">
+            <span class="ttl-label">Auto-expire after</span>
+            <input type="number" class="ttl-input" id="ttlInput" min="0" max="3650" placeholder="0" title="Days. 0 = disabled">
+            <span class="ttl-label">days</span>
+            <button class="ttl-save-btn" onclick="saveTTL()">Save TTL</button>
+          </div>
+          <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.4rem">0 = disabled. Min 7 days. Rollups are never expired.</div>
+        </div>
+
         <div class="card" id="briefingCard" style="display:none">
           <div class="card-title"><span class="dot" style="background:var(--accent-amber)"></span> Morning Briefing 🌅</div>
           <div class="briefing-text" id="briefingText"></div>
@@ -895,12 +978,139 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
 
         document.getElementById('content').className = 'grid grid-main fade-in';
         document.getElementById('content').style.display = 'grid';
+
+        // v3.1: Analytics + Lifecycle Controls
+        document.getElementById('analyticsCard').style.display = 'block';
+        document.getElementById('lifecycleCard').style.display = 'block';
+        loadAnalytics(project);
+        loadRetention(project);
+
         loadTeam(); // v3.0: auto-load Hivemind team
       } catch(e) {
         alert('Failed to load project data: ' + e.message);
       } finally {
         document.getElementById('loading').style.display = 'none';
       }
+    }
+
+    // ─── v3.1: Memory Analytics ───────────────────────────────────────────────
+    async function loadAnalytics(project) {
+      try {
+        var res = await fetch('/api/analytics?project=' + encodeURIComponent(project));
+        var d = await res.json();
+
+        document.getElementById('astat-entries').textContent = (d.totalEntries || 0);
+        document.getElementById('astat-rollups').textContent = (d.totalRollups || 0);
+        document.getElementById('astat-savings').textContent = (d.rollupSavings || 0);
+        document.getElementById('astat-avglen').textContent = Math.round(d.avgSummaryLength || 0);
+
+        // Sparkline
+        var sparkEl = document.getElementById('sparkline');
+        var days = d.sessionsByDay || [];
+        if (days.length === 0) {
+          // Pad with 14 zero days
+          days = Array.from({length:14}, function(_, i) {
+            var dt = new Date(); dt.setDate(dt.getDate() - (13 - i));
+            return { date: dt.toISOString().slice(0,10), count: 0 };
+          });
+        }
+        var maxCount = Math.max.apply(null, days.map(function(x){return x.count || 0;})) || 1;
+        sparkEl.innerHTML = days.slice(-14).map(function(d) {
+          var pct = Math.max(4, Math.round(((d.count || 0) / maxCount) * 100));
+          return '<div class="spark-bar" style="height:' + pct + '%" title="' + d.date + ': ' + d.count + '"></div>';
+        }).join('');
+      } catch(e) {
+        console.warn('Analytics load failed:', e);
+      }
+    }
+
+    // ─── v3.1: TTL Retention ───────────────────────────────────────────────
+    async function loadRetention(project) {
+      try {
+        var res = await fetch('/api/retention?project=' + encodeURIComponent(project));
+        var d = await res.json();
+        var inp = document.getElementById('ttlInput');
+        if (inp) inp.value = d.ttl_days || 0;
+      } catch(e) {}
+    }
+
+    async function saveTTL() {
+      var project = document.getElementById('projectSelect').value;
+      if (!project) return;
+      var days = parseInt(document.getElementById('ttlInput').value, 10) || 0;
+      try {
+        var res = await fetch('/api/retention', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ project, ttl_days: days })
+        });
+        var d = await res.json();
+        if (d.ok) {
+          showToast(days > 0 ? '✓ TTL saved: ' + days + 'd (expired ' + (d.expired || 0) + ')' : '✓ TTL disabled');
+        } else {
+          showToast('❌ ' + (d.error || 'Save failed'), true);
+        }
+      } catch(e) { showToast('❌ Cannot save TTL', true); }
+    }
+
+    // ─── v3.1: Compact Now ───────────────────────────────────────────────
+    async function compactNow() {
+      var project = document.getElementById('projectSelect').value;
+      if (!project) return;
+      var btn = document.getElementById('compactBtn');
+      btn.disabled = true;
+      btn.textContent = '🗜️ Compacting...';
+      try {
+        var res = await fetch('/api/compact', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ project })
+        });
+        var d = await res.json();
+        if (d.ok) {
+          showToast('✓ Compaction done');
+          loadAnalytics(project); // refresh stats
+        } else {
+          showToast('❌ Compaction failed', true);
+        }
+      } catch(e) { showToast('❌ ' + e.message, true); }
+      finally {
+        btn.disabled = false;
+        btn.textContent = '🗜️ Compact Now';
+      }
+    }
+
+    // ─── v3.1: PKM Export (Obsidian / Logseq ZIP) ───────────────────────
+    async function exportPKM() {
+      var project = document.getElementById('projectSelect').value;
+      if (!project) return;
+      var btn = document.getElementById('exportBtn');
+      btn.disabled = true;
+      btn.textContent = '📦 Exporting...';
+      try {
+        var a = document.createElement('a');
+        a.href = '/api/export?project=' + encodeURIComponent(project);
+        a.download = 'prism-export-' + project + '.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showToast('↓ Download started');
+      } catch(e) { showToast('❌ Export failed', true); }
+      finally {
+        btn.disabled = false;
+        btn.textContent = '📦 Export ZIP';
+      }
+    }
+
+    function showToast(msg, isErr) {
+      var el = document.getElementById('fixedToast');
+      if (!el) return;
+      el.textContent = msg;
+      el.style.borderColor = isErr ? 'rgba(244,63,94,0.4)' : 'var(--border-glow)';
+      el.style.color = isErr ? 'var(--accent-rose)' : 'var(--text-primary)';
+      el.classList.add('show');
+      clearTimeout(el._t);
+      el._t = setTimeout(function(){ el.classList.remove('show'); }, 3000);
     }
 
     function escapeHtml(str) {

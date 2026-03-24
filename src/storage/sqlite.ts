@@ -34,7 +34,9 @@ import type {
   HistorySnapshot,
   HealthStats,             // v2.2.0: Health check (fsck) aggregate type
   AgentRegistryEntry,      // v3.0: Agent Hivemind registry
+  AnalyticsData,           // v3.1: Memory Analytics
 } from "./interface.js";
+
 import { debugLog } from "../utils/logger.js";
 
 export class SqliteStorage implements StorageBackend {
@@ -43,14 +45,34 @@ export class SqliteStorage implements StorageBackend {
 
   // ─── Lifecycle ─────────────────────────────────────────────
 
-  async initialize(): Promise<void> {
-    // Resolve ~/.prism-mcp/ directory
-    const prismDir = path.join(os.homedir(), ".prism-mcp");
-    if (!fs.existsSync(prismDir)) {
-      fs.mkdirSync(prismDir, { recursive: true });
+  async initialize(dbPath?: string): Promise<void> {
+    // ─── DB Path Resolution ────────────────────────────────────────────
+    // Priority:
+    //   1. Explicit dbPath argument — used by tests to inject a per-instance
+    //      path with ZERO global side-effects. No env mutation, no race risk,
+    //      safe under full parallel test execution.
+    //   2. Default: ~/.prism-mcp/data.db — used by production server startup.
+    //
+    // Why explict arg over env var?
+    //   Env vars are process-global. Mutating them around an async boundary
+    //   (set → await initialize() → restore) is racey when multiple test
+    //   suites run in parallel: suite B can clobber PRISM_DB_PATH between
+    //   suite A's write and suite A's read. A direct argument has no
+    //   observable global state and cannot race.
+    let resolvedPath: string;
+    if (dbPath) {
+      resolvedPath = dbPath;
+      const dir = path.dirname(resolvedPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } else {
+      const prismDir = path.join(os.homedir(), ".prism-mcp");
+      if (!fs.existsSync(prismDir)) {
+        fs.mkdirSync(prismDir, { recursive: true });
+      }
+      resolvedPath = path.join(prismDir, "data.db");
     }
 
-    this.dbPath = path.join(prismDir, "data.db");
+    this.dbPath = resolvedPath;
 
     this.db = createClient({
       url: `file:${this.dbPath}`,
@@ -304,7 +326,19 @@ export class SqliteStorage implements StorageBackend {
       `CREATE INDEX IF NOT EXISTS idx_registry_project ON agent_registry(project, user_id)`
     );
 
-    // system_settings: key-value store for dashboard runtime settings (v3.0)
+    // ── Note: system_settings is intentionally orphaned ─────────────────
+    // This table is created for forward-compatibility but is NOT the active
+    // settings store. Both SqliteStorage and SupabaseStorage proxy settings
+    // calls to configStorage.js (JSON file on disk) via:
+    //   import { getSetting, setSetting, getAllSettings } from "./configStorage.js"
+    //
+    // The table is NOT safe to drop from the migration because existing user
+    // deployments may already have it and SQLite has no IF EXISTS for DROP
+    // in a safe cross-version migration. Instead, a future release can
+    // repoint getSettings/setSetting to use this.db.execute() here and
+    // retire configStorage.js at that point.
+    //
+    // See: src/storage/interface.ts "v3.0: Dashboard Settings (configStorage proxy)"
     await this.db.execute(`
       CREATE TABLE IF NOT EXISTS system_settings (
         key TEXT PRIMARY KEY,
@@ -340,6 +374,15 @@ export class SqliteStorage implements StorageBackend {
         // e.g., "created_at.desc" → "created_at DESC"
         const parts = value.split(".");
         const col = parts[0];
+        // ── SQL Injection Guard ──────────────────────────────────────────
+        // col is interpolated directly into the ORDER BY clause. We must
+        // reject anything that isn't a plain identifier (letters, digits,
+        // underscores) before it touches the query string.
+        // Note: @libsql/client already blocks stacked queries (;DROP TABLE),
+        // but CASE WHEN / expression injection is still possible without this.
+        if (!/^[a-zA-Z0-9_]+$/.test(col)) {
+          throw new Error(`Invalid order column: "${col}". Only alphanumeric identifiers are allowed.`);
+        }
         const dir = parts[1]?.toUpperCase() === "DESC" ? "DESC" : "ASC";
         order = `ORDER BY ${col} ${dir}`;
         continue;
@@ -398,7 +441,15 @@ export class SqliteStorage implements StorageBackend {
   private parseJsonColumn(value: unknown): unknown[] {
     if (!value) return [];
     if (typeof value === "string") {
-      try { return JSON.parse(value); } catch { return []; }
+      try {
+        const parsed = JSON.parse(value);
+        // ── Type Safety Guard ────────────────────────────────────────────
+        // JSON.parse() can return any type (object, number, boolean, null).
+        // If a malformed non-array JSON string (e.g. "{}") somehow made it
+        // into the DB, callers would crash on .map()/.filter().
+        // Force it to an array so all downstream code stays safe.
+        return Array.isArray(parsed) ? parsed : [];
+      } catch { return []; }
     }
     if (Array.isArray(value)) return value;
     return [];
@@ -1323,6 +1374,129 @@ export class SqliteStorage implements StorageBackend {
 
   async getAllSettings(): Promise<Record<string, string>> {
     return cfgGetAll();
+  }
+
+  // ─── v3.1: Memory Analytics ──────────────────────────────────────────────
+  //
+  // Returns usage statistics for the Mind Palace dashboard.
+  // Two SQL queries are used:
+  //   Query 1 — aggregate counts (fast, single pass)
+  //   Query 2 — sessions-per-day for the 14-day sparkline
+  //
+  // Both queries exclude:
+  //   • archived_at IS NOT NULL  — TTL-expired entries (soft-deleted by expireByTTL)
+  //   • deleted_at IS NOT NULL   — GDPR tombstones (from session_forget_memory)
+  // This ensures the dashboard only shows "live" memory, matching what the
+  // LLM actually sees during session_load_context.
+
+  async getAnalytics(project: string, userId: string): Promise<AnalyticsData> {
+    // Query 1: Aggregate stats — total entries, rollup count, tokens saved,
+    // and average summary length (used as a proxy for knowledge richness).
+    const countResult = await this.db.execute({
+      sql: `SELECT
+              COUNT(*) AS total_entries,
+              SUM(CASE WHEN is_rollup = 1 THEN 1 ELSE 0 END) AS total_rollups,
+              -- rollup_count tracks how many raw entries each rollup replaced,
+              -- so we can show "X entries saved by compaction" in the dashboard.
+              SUM(CASE WHEN is_rollup = 1 THEN COALESCE(rollup_count, 0) ELSE 0 END) AS rollup_savings,
+              COALESCE(AVG(LENGTH(summary)), 0) AS avg_summary_length
+            FROM session_ledger
+            WHERE project = ? AND user_id = ?
+              AND archived_at IS NULL AND deleted_at IS NULL`,
+      args: [project, userId],
+    });
+
+    const row = countResult.rows[0] as Record<string, unknown>;
+
+    // Query 2: Sessions per day for the sparkline (last 14 days).
+    // We only count non-rollup entries so the chart reflects actual work sessions,
+    // not compaction operations.
+    const sparkResult = await this.db.execute({
+      sql: `SELECT
+              DATE(created_at) AS date,
+              COUNT(*) AS count
+            FROM session_ledger
+            WHERE project = ? AND user_id = ?
+              AND archived_at IS NULL AND deleted_at IS NULL
+              AND is_rollup = 0
+              AND created_at >= DATE('now', '-14 days')
+            GROUP BY DATE(created_at)
+            ORDER BY date ASC`,
+      args: [project, userId],
+    });
+
+    // Fill in zeros for days with no sessions so the sparkline always
+    // has exactly 14 bars regardless of how sparse the data is.
+    // A gap-fill approach (day loop + Map lookup) is much simpler than
+    // a SQL recursive CTE for this use case.
+    const sparkMap = new Map<string, number>();
+    for (const r of sparkResult.rows) {
+      sparkMap.set(r.date as string, r.count as number);
+    }
+
+    const sessionsByDay: Array<{ date: string; count: number }> = [];
+    for (let i = 13; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().slice(0, 10);
+      sessionsByDay.push({ date: dateStr, count: sparkMap.get(dateStr) || 0 });
+    }
+
+    return {
+      totalEntries: (row?.total_entries as number) || 0,
+      totalRollups: (row?.total_rollups as number) || 0,
+      rollupSavings: (row?.rollup_savings as number) || 0,
+      avgSummaryLength: Math.round((row?.avg_summary_length as number) || 0),
+      sessionsByDay,
+    };
+  }
+
+  // ─── v3.1: TTL / Automated Data Retention ────────────────────────────────
+  //
+  // Design: SOFT-DELETE (not hard-delete)
+  //
+  // We set archived_at rather than deleting rows. This means:
+  //   • The entry disappears from session_load_context and knowledge_search
+  //     immediately (both queries filter on archived_at IS NULL)
+  //   • The row is preserved for audit trails and GDPR right-of-access requests
+  //   • A hard-delete can still be performed later via session_forget_memory
+  //     with hard_delete: true
+  //
+  // Rollup entries (is_rollup = 1) are intentionally excluded from expiry:
+  //   • Rollups are dense summaries of many sessions — losing them would wipe
+  //     the entire compacted history, not just old raw entries.
+  //   • If users want to clean up rollups, they should use knowledge_forget
+  //     or session_forget_memory explicitly.
+  //
+  // The minimum TTL enforced in the handler is 7 days, so the cutoff is
+  // always at least one week in the past. This prevents accidental mass-delete.
+
+  async expireByTTL(
+    project: string,
+    ttlDays: number,
+    userId: string
+  ): Promise<{ expired: number }> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - ttlDays);
+    const cutoffStr = cutoff.toISOString();
+
+    // Use archived_at (soft-delete) rather than hard-deleting rows.
+    // This preserves the audit trail while hiding old entries from all
+    // standard queries that filter on `archived_at IS NULL`.
+    const result = await this.db.execute({
+      sql: `UPDATE session_ledger
+            SET archived_at = datetime('now')
+            WHERE project = ? AND user_id = ?
+              AND is_rollup = 0          -- never expire compacted rollups
+              AND archived_at IS NULL    -- idempotent: skip already-expired rows
+              AND deleted_at IS NULL     -- skip GDPR tombstones
+              AND created_at < ?`,
+      args: [project, userId, cutoffStr],
+    });
+
+    const expired = result.rowsAffected || 0;
+    debugLog(`[SqliteStorage] TTL sweep: expired ${expired} entries for "${project}" (cutoff: ${cutoffStr})`);
+    return { expired };
   }
 
 }

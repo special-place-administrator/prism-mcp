@@ -32,7 +32,9 @@ import {
   HistorySnapshot,
   HealthStats,             // v2.2.0: Health check (fsck) aggregate type
   AgentRegistryEntry,      // v3.0: Agent Hivemind registry
+  AnalyticsData,           // v3.1: Memory Analytics
 } from "./interface.js";
+
 import { debugLog } from "../utils/logger.js";
 import { getSetting as cfgGet, setSetting as cfgSet, getAllSettings as cfgGetAll } from "./configStorage.js";
 
@@ -407,4 +409,69 @@ export class SupabaseStorage implements StorageBackend {
   async getAllSettings(): Promise<Record<string, string>> {
     return cfgGetAll();
   }
+
+  // ─── v3.1: Memory Analytics ──────────────────────────────────
+
+  async getAnalytics(project: string, userId: string): Promise<AnalyticsData> {
+    // Attempt to call a Supabase RPC. Falls back to zeroed struct if the RPC
+    // doesn't exist yet (avoids breaking users who haven't run the migration).
+    try {
+      const result = await supabaseRpc("get_project_analytics", {
+        p_project: project,
+        p_user_id: userId,
+      });
+      const data = Array.isArray(result) ? result[0] : result;
+      if (data) {
+        return {
+          totalEntries: data.total_entries || 0,
+          totalRollups: data.total_rollups || 0,
+          rollupSavings: data.rollup_savings || 0,
+          avgSummaryLength: data.avg_summary_length || 0,
+          sessionsByDay: data.sessions_by_day || [],
+        };
+      }
+    } catch {
+      debugLog("[SupabaseStorage] getAnalytics RPC unavailable — returning zeroed struct");
+    }
+    // Graceful degradation: return zeroed struct so dashboard doesn't crash
+    return {
+      totalEntries: 0, totalRollups: 0, rollupSavings: 0,
+      avgSummaryLength: 0, sessionsByDay: [],
+    };
+  }
+
+  // ─── v3.1: TTL / Automated Data Retention ────────────────────
+
+  async expireByTTL(
+    project: string,
+    ttlDays: number,
+    userId: string
+  ): Promise<{ expired: number }> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - ttlDays);
+    const cutoffStr = cutoff.toISOString();
+
+    // Use existing supabasePatch with PostgREST filter syntax
+    // No new RPC needed — PATCH with filter works for bulk soft-delete
+    try {
+      await supabasePatch(
+        "session_ledger",
+        { archived_at: cutoffStr },
+        {
+          project: `eq.${project}`,
+          user_id: `eq.${userId}`,
+          "created_at": `lt.${cutoffStr}`,
+          "is_rollup": "eq.false",
+          "archived_at": "is.null",
+        }
+      );
+    } catch (e) {
+      debugLog("[SupabaseStorage] expireByTTL failed: " + (e instanceof Error ? e.message : String(e)));
+    }
+
+    // Supabase PATCH doesn't return rowsAffected — return 0 (UI doesn't need exact count)
+    debugLog(`[SupabaseStorage] TTL sweep completed for "${project}" (cutoff: ${cutoffStr})`);
+    return { expired: 0 };
+  }
+
 }

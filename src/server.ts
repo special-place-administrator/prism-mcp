@@ -80,6 +80,7 @@ import { startDashboardServer } from "./dashboard/server.js";
 // error wrapper. Now uses getStorage() which routes through the
 // correct backend (Supabase or SQLite) with proper error handling.
 import { getStorage } from "./storage/index.js";
+import { getSettingSync, initConfigStorage } from "./storage/configStorage.js";
 
 // ─── Import Tool Definitions (schemas) and Handlers (implementations) ─────
 
@@ -120,6 +121,9 @@ import {
   SESSION_HEALTH_CHECK_TOOL,
   // ─── Phase 2: GDPR Memory Deletion tool definition ───
   SESSION_FORGET_MEMORY_TOOL,
+  // ─── v3.1: TTL Retention tool ───
+  KNOWLEDGE_SET_RETENTION_TOOL,
+
   sessionSaveLedgerHandler,
   sessionSaveHandoffHandler,
   sessionLoadContextHandler,
@@ -139,6 +143,8 @@ import {
   sessionHealthCheckHandler,
   // ─── Phase 2: GDPR Memory Deletion handler ───
   sessionForgetMemoryHandler,
+  // ─── v3.1: TTL Retention handler ───
+  knowledgeSetRetentionHandler,
   // ─── v3.0: Agent Hivemind tools ───
   AGENT_REGISTRY_TOOLS,
   agentRegisterHandler,
@@ -180,7 +186,10 @@ const SESSION_MEMORY_TOOLS: Tool[] = [
   SESSION_HEALTH_CHECK_TOOL,   // session_health_check — brain integrity checker (v2.2.0)
   // ─── Phase 2: GDPR Memory Deletion tool ───
   SESSION_FORGET_MEMORY_TOOL,  // session_forget_memory — GDPR-compliant memory deletion (Phase 2)
+  // ─── v3.1: TTL Retention tool ───
+  KNOWLEDGE_SET_RETENTION_TOOL, // knowledge_set_retention — set auto-expiry TTL for a project
 ];
+
 
 // Combine: always list ALL tools so scanners (Glama, Smithery, MCP Registry)
 // can enumerate the full capability set. Runtime guards in the CallTool handler
@@ -202,6 +211,12 @@ const ALL_TOOLS: Tool[] = [
 // This is a simple in-memory set. If the server restarts, clients
 // will re-subscribe on reconnect (per MCP spec behavior).
 const activeSubscriptions = new Set<string>();
+
+// Module-level promise for the async storage pre-warm fired in startServer().
+// Resource handlers check storageIsReady (synchronous) instead of awaiting
+// the promise, so they never block the MCP stdio pipe during startup.
+let storageReady: Promise<void> | null = null;
+let storageIsReady = false;
 
 /**
  * Notifies subscribed clients that a resource has changed.
@@ -332,6 +347,21 @@ export function createServer() {
         throw new Error(`Unknown prompt: ${name}`);
       }
 
+      // Non-blocking: if storage isn't warm yet, return a fallback message
+      // instead of blocking the MCP stdio pipe during Supabase init.
+      if (!storageIsReady) {
+        const project = promptArgs?.project || "default";
+        return {
+          messages: [{
+            role: "user",
+            content: {
+              type: "text",
+              text: `⏳ Storage is still initializing. Session context for "${project}" will be available shortly.\nUse the session_load_context tool to load context once ready.`,
+            },
+          }],
+        };
+      }
+
       const project = promptArgs?.project || "default";
       const level = promptArgs?.level || "standard";
 
@@ -410,9 +440,14 @@ export function createServer() {
 
     // List concrete resources — one per known project
     server.setRequestHandler(ListResourcesRequestSchema, async () => {
-      // v2.3.6 FIX: Use storage abstraction instead of direct supabaseGet
+      // Non-blocking: if storage isn't warm yet, return empty list instantly
+      // so the client UI isn't blocked during Supabase init (can take 1m+).
+      // Resources will appear on the next ListResources call once warm.
+      if (!storageIsReady) {
+        return { resources: [] };
+      }
       try {
-        const storage = await getStorage();
+        const storage = await getStorage(); // instant — singleton is warm
         const projects = await storage.listProjects();
 
         return {
@@ -440,8 +475,21 @@ export function createServer() {
       }
 
       const project = decodeURIComponent(match[1]);
+
+      // Non-blocking: if storage isn't warm yet, return a friendly fallback
+      // instead of blocking the client UI for 1m+ during Supabase init.
+      if (!storageIsReady) {
+        return {
+          contents: [{
+            uri,
+            mimeType: "text/plain",
+            text: `⏳ Storage is still initializing. Session context for "${project}" will be available shortly.\nUse the session_load_context tool to load context once ready.`,
+          }],
+        };
+      }
+
       try {
-        const storage = await getStorage();
+        const storage = await getStorage(); // instant — singleton is warm
         const data = await storage.loadContext(project, "standard", PRISM_USER_ID);
 
         if (!data) {
@@ -480,11 +528,26 @@ export function createServer() {
             `_occ_instruction: When saving handoff state, you MUST pass expected_version: ${version} to prevent state collisions with other sessions.`
           : "";
 
+        // ─── Agent Identity Block (mirrors session_load_context output) ───
+        const ROLE_ICONS: Record<string, string> = {
+          dev: "🛠️", qa: "🔍", pm: "📋", lead: "🏗️",
+          security: "🔒", ux: "🎨", global: "🌐", cmo: "📢",
+        };
+        const agentName = getSettingSync("agent_name", "");
+        const defaultRole = getSettingSync("default_role", "");
+        let identityBlock = "";
+        if (agentName || (defaultRole && defaultRole !== "global")) {
+          const icon = ROLE_ICONS[defaultRole] || "🤖";
+          const namePart = agentName ? `👋 **${agentName}**` : `👋 **Agent**`;
+          const rolePart = defaultRole ? ` · Role: \`${defaultRole}\`` : "";
+          identityBlock = `\n\n[👤 AGENT IDENTITY]\n${icon} ${namePart}${rolePart}`;
+        }
+
         return {
           contents: [{
             uri,
             mimeType: "text/plain",
-            text: `📋 Session context for "${project}" (standard):\n\n${formattedContext.trim()}${versionNote}`,
+            text: `📋 Session context for "${project}" (standard):\n\n${formattedContext.trim()}${identityBlock}${versionNote}`,
           }],
         };
       } catch (error) {
@@ -628,6 +691,12 @@ export function createServer() {
           if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
           return await sessionForgetMemoryHandler(args);
 
+        // ─── v3.1: TTL Retention Tool ───
+
+        case "knowledge_set_retention":
+          if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
+          return await knowledgeSetRetentionHandler(args);
+
         // ─── v3.0: Agent Hivemind Tools ───
 
         case "agent_register":
@@ -749,39 +818,74 @@ export function createSandboxServer() {
  * responses to stdout. Log messages go to stderr.
  */
 export async function startServer() {
+  // Pre-warm the config settings cache BEFORE connecting the MCP transport.
+  // This ensures getSettingSync() returns real values (agent_name, default_role)
+  // during the Initialize handshake — zero extra latency for resource reads.
+  // initConfigStorage() is local SQLite only (~5ms), safe to await.
+  await initConfigStorage();
+
   const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  // ─── v2.0 Step 6: Initialize SyncBus (Telepathy) ───
+  // Pre-warm storage AFTER connecting — fired async so we never block the
+  // stdio handshake. Supabase REST initialization can take 500ms–5s; blocking
+  // on it before server.connect() was the root cause of the 1m 56s CLI delay.
+  // By the time the first real tool/resource call arrives, the singleton is warm.
   if (SESSION_MEMORY_ENABLED) {
-    try {
-      const syncBus = await getSyncBus();
-      await syncBus.startListening();
-
-      syncBus.on("update", (event: SyncEvent) => {
-        // Send an MCP logging notification to the IDE
-        try {
-          server.sendLoggingMessage({
-            level: "info",
-            data: `[Prism Telepathy] \u{1F9E0} Another agent just updated the memory for ` +
-              `'${event.project}' to version ${event.version}. ` +
-              `You may want to run session_load_context to sync up.`,
-          });
-        } catch (err) {
-          console.error(`[Telepathy] Failed to send notification: ${err}`);
+    const STORAGE_TIMEOUT_MS = 10_000;
+    storageReady = Promise.race([
+      getStorage().then(() => { storageIsReady = true; }),
+      new Promise<void>(resolve => setTimeout(() => {
+        if (!storageIsReady) {
+          console.error(`[Prism] Storage pre-warm timed out after ${STORAGE_TIMEOUT_MS}ms (non-fatal)`);
         }
-      });
+        resolve();
+      }, STORAGE_TIMEOUT_MS)),
+    ]).catch(err => {
+      console.error(`[Prism] Storage pre-warm failed (non-fatal): ${err}`);
+    });
+  }
 
-    } catch (err) {
-      console.error(`[Telepathy] SyncBus init failed (non-fatal): ${err}`);
-    }
+  // ─── v2.0 Step 6: Initialize SyncBus (Telepathy) ───
+  // Fire-and-forget — SyncBus is non-critical for startup.
+  // Awaiting getSyncBus() + startListening() could block the event loop
+  // if Supabase Realtime is slow, delaying MCP request processing.
+  if (SESSION_MEMORY_ENABLED) {
+    (async () => {
+      try {
+        const syncBus = await getSyncBus();
+        await syncBus.startListening();
+
+        syncBus.on("update", (event: SyncEvent) => {
+          // Send an MCP logging notification to the IDE
+          try {
+            server.sendLoggingMessage({
+              level: "info",
+              data: `[Prism Telepathy] \u{1F9E0} Another agent just updated the memory for ` +
+                `'${event.project}' to version ${event.version}. ` +
+                `You may want to run session_load_context to sync up.`,
+            });
+          } catch (err) {
+            console.error(`[Telepathy] Failed to send notification: ${err}`);
+          }
+        });
+
+      } catch (err) {
+        console.error(`[Telepathy] SyncBus init failed (non-fatal): ${err}`);
+      }
+    })();
   }
 
   // ─── v2.0 Step 8: Mind Palace Dashboard ───
-  startDashboardServer().catch(err => {
-    console.error(`[Dashboard] Mind Palace startup failed (non-fatal): ${err}`);
-  });
+  // Deferred to next tick — yields the event loop so the MCP stdio
+  // transport processes the initialize handshake before dashboard
+  // init spawns child processes (lsof) and awaits storage.
+  setTimeout(() => {
+    startDashboardServer().catch(err => {
+      console.error(`[Dashboard] Mind Palace startup failed (non-fatal): ${err}`);
+    });
+  }, 0);
 
   // Keep the process alive — without this, Node.js would exit
   // because there are no active event loop handles after the

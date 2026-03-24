@@ -199,6 +199,16 @@ describe("Concurrent Handoff Upserts", { timeout: 30_000 }, () => {
       expect(ctx).not.toBeNull();
       expect(ctx.last_summary).toBe(`Handoff from ${role} agent`);
     }
+
+    // ── Invariant: no cross-role payload contamination
+    // A WHERE clause bug that ignores the role column would cause role[0]
+    // to return role[1]'s summary. This catches that silently.
+    for (let i = 0; i < roles.length; i++) {
+      const role = roles[i];
+      const ctx = await storage.loadContext(TEST_PROJECT, "standard", TEST_USER_ID, role);
+      const otherRole = roles[(i + 1) % roles.length];
+      expect(ctx.last_summary).not.toBe(`Handoff from ${otherRole} agent`);
+    }
   });
 
   /**
@@ -262,6 +272,22 @@ describe("Agent Registry Storm", { timeout: 30_000 }, () => {
     // All agents should be visible
     const team = await storage.listTeam(TEST_PROJECT, TEST_USER_ID);
     expect(team.length).toBeGreaterThanOrEqual(CONCURRENCY_LEVEL);
+
+    // ── Invariant: exactly ONE row per role (no duplicates from upsert bugs)
+    // If the UNIQUE(project, user_id, role) constraint silently allowed duplicate
+    // rows, registeredRoles would be longer than uniqueRoles.
+    const registeredRoles: string[] = team
+      .filter((a: any) => a.role.startsWith("agent-"))
+      .map((a: any) => a.role);
+    const uniqueRoles = new Set(registeredRoles);
+    expect(uniqueRoles.size).toBe(registeredRoles.length); // no duplicates
+
+    // ── Invariant: each agent has the correct task (no cross-agent payload writes)
+    for (const role of roles) {
+      const agent = team.find((a: any) => a.role === role);
+      expect(agent).toBeDefined();
+      expect(agent.current_task).toBe(`Task for ${role}`);
+    }
   });
 
   /**
@@ -371,6 +397,24 @@ describe("Mixed Workload", { timeout: 30_000 }, () => {
     const succeeded = results.filter(r => r.status === "fulfilled") as PromiseFulfilledResult<any>[];
     expect(succeeded.length).toBeGreaterThan(0);
     expect(succeeded[0].value.last_summary).toBeDefined();
+
+    // ── Invariant: strict cross-project isolation
+    // Each workflow writes exactly 1 ledger entry to its own project
+    // (mixed-project-0, mixed-project-1, etc.). If data bleeds across
+    // projects, these counts or summaries will be wrong.
+    const projectZeroEntries = await storage.getLedgerEntries({
+      project: `eq.mixed-project-0`,
+      limit: "10",
+    });
+    expect(projectZeroEntries.length).toBe(1);
+    expect(projectZeroEntries[0].summary).toBe("dev completed task 0");
+
+    const projectOneEntries = await storage.getLedgerEntries({
+      project: `eq.mixed-project-1`,
+      limit: "10",
+    });
+    expect(projectOneEntries.length).toBe(1);
+    expect(projectOneEntries[0].summary).toBe("qa completed task 1");
   });
 });
 
