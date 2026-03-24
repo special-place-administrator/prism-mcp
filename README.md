@@ -382,7 +382,7 @@ Automatically loads context when a new session begins:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c \"import json; print(json.dumps({'continue': True, 'suppressOutput': False, 'systemMessage': 'MANDATORY STARTUP WORKFLOW: 1) Display the startup block. 2) Call mcp__prism-mcp__session_load_context with project=my-project and level=standard. 3) After success, print PRISM_CONTEXT_LOADED.'}))\"",
+            "command": "python3 -c \"import json; print(json.dumps({'continue': True, 'suppressOutput': False, 'systemMessage': 'You MUST call mcp__prism-mcp__session_load_context twice before responding to the user: first with project=my-project level=standard, then with project=my-other-project level=standard. Do not skip this.'}))\"",
             "timeout": 10
           }
         ]
