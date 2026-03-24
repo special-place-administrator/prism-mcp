@@ -172,29 +172,29 @@
 
 | Feature | **Prism MCP** | [MCP Memory](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) | [Mem0](https://github.com/mem0ai/mem0) | [Mnemory](https://github.com/fpytloun/mnemory) | [Basic Memory](https://github.com/basicmachines-co/basic-memory) |
 |---|---|---|---|---|---|
-| **Pricing** | ✅ Free & open source (MIT) | ✅ Free & open source (MIT) | Freemium (free 10K memories; paid Pro) | ✅ Free & open source | Freemium (OSS core free; paid Pro) |
-| **Storage** | SQLite (local) + Supabase (cloud) | JSON file | Postgres + Qdrant (hosted or self-hosted) | Qdrant + S3/MinIO | Markdown files |
-| **Zero Config** | ✅ `npx -y prism-mcp-server` | ✅ | ❌ Requires Qdrant/Postgres | ✅ `uvx mnemory` | ✅ `pip install basic-memory` |
-| **Behavioral Memory** | ✅ `session_save_experience` with importance tracking | ❌ | ❌ | ❌ | ❌ |
-| **Dynamic Role Resolution** | ✅ Auto-resolves from dashboard settings | ❌ | ❌ | ❌ | ❌ |
-| **Token Budget** | ✅ `max_tokens` on context loading | ❌ | ❌ | ❌ | ❌ |
-| **Importance Decay** | ✅ Stale experiences auto-fade | ❌ | ❌ | ❌ | ❌ |
-| **Semantic Search** | ✅ F32_BLOB vectors + FTS5 | ❌ | ✅ pgvector | ✅ Qdrant vectors | ❌ Text search only |
-| **Knowledge Graph** | ✅ Neural Graph (Vis.js dashboard) | ✅ Entity/Relation model | ❌ | ✅ Relationship graph | ✅ Markdown links |
-| **Time Travel** | ✅ `memory_history` / `memory_checkout` | ❌ | ❌ | ❌ | ❌ |
-| **Fact Merging** | ✅ Async Gemini (fire-and-forget) | ❌ | ✅ Built-in | ✅ Contradiction resolution | ❌ |
-| **Security Scan** | ✅ Prompt injection detection | ❌ | ❌ | ✅ Anti-injection in fsck | ❌ |
-| **Health Check** | ✅ `session_health_check` (fsck) | ❌ | ❌ | ✅ 3-phase fsck | ❌ |
-| **Visual Dashboard** | ✅ Mind Palace (localhost:3000) | ❌ | ✅ Cloud dashboard | ✅ Management UI | ❌ |
-| **Multi-Agent Sync** | ✅ Real-time cross-client | ❌ | ❌ | ❌ Per-user isolation | ❌ |
-| **Visual Memory** | ✅ Screenshot vault + auto-capture | ❌ | ❌ | ✅ Artifact store | ❌ |
+| **Pricing** | ✅ Free / MIT | ✅ Free / MIT | Freemium | ✅ Free / OSS | Freemium |
+| **Storage** | SQLite + Supabase | JSON file | Postgres + Qdrant | Qdrant + S3 | Markdown files |
+| **Zero Config** | ✅ npx one-liner | ✅ | ❌ Qdrant/Postgres | ✅ uvx | ✅ pip |
+| **Behavioral Memory** | ✅ Importance tracking | ❌ | ❌ | ❌ | ❌ |
+| **Dynamic Roles** | ✅ Dashboard auto-resolve | ❌ | ❌ | ❌ | ❌ |
+| **Token Budget** | ✅ max_tokens param | ❌ | ❌ | ❌ | ❌ |
+| **Importance Decay** | ✅ Auto-fade stale data | ❌ | ❌ | ❌ | ❌ |
+| **Semantic Search** | ✅ Vectors + FTS5 | ❌ | ✅ pgvector | ✅ Qdrant | ❌ Text only |
+| **Knowledge Graph** | ✅ Neural Graph | ✅ Entity model | ❌ | ✅ Graph | ✅ MD links |
+| **Time Travel** | ✅ History + checkout | ❌ | ❌ | ❌ | ❌ |
+| **Fact Merging** | ✅ Gemini async | ❌ | ✅ Built-in | ✅ Contradiction | ❌ |
+| **Security Scan** | ✅ Injection detection | ❌ | ❌ | ✅ Anti-injection | ❌ |
+| **Health Check** | ✅ fsck tool | ❌ | ❌ | ✅ 3-phase fsck | ❌ |
+| **Visual Dashboard** | ✅ Mind Palace | ❌ | ✅ Cloud UI | ✅ Mgmt UI | ❌ |
+| **Multi-Agent Sync** | ✅ Real-time | ❌ | ❌ | ❌ Per-user | ❌ |
+| **Visual Memory** | ✅ Screenshot vault | ❌ | ❌ | ✅ Artifacts | ❌ |
 | **Auto-Compaction** | ✅ Gemini rollups | ❌ | ❌ | ❌ | ❌ |
 | **Morning Briefing** | ✅ Gemini synthesis | ❌ | ❌ | ❌ | ❌ |
 | **OCC (Concurrency)** | ✅ Version-based | ❌ | ❌ | ❌ | ❌ |
-| **GDPR Compliance** | ✅ Soft/hard delete + audit trail | ❌ | ❌ | ❌ | ❌ |
-| **Memory Tracing** | ✅ MemoryTrace with latency breakdown | ❌ | ❌ | ❌ | ❌ |
-| **LangChain Native** | ✅ BaseRetriever adapters | ❌ | ❌ | ❌ | ❌ |
-| **MCP Native** | ✅ stdio (Claude Desktop, Cursor) | ✅ stdio | ❌ Python SDK / REST | ✅ HTTP + MCP | ✅ stdio |
+| **GDPR Compliance** | ✅ Soft/hard delete | ❌ | ❌ | ❌ | ❌ |
+| **Memory Tracing** | ✅ Latency breakdown | ❌ | ❌ | ❌ | ❌ |
+| **LangChain** | ✅ BaseRetriever | ❌ | ❌ | ❌ | ❌ |
+| **MCP Native** | ✅ stdio | ✅ stdio | ❌ Python SDK | ✅ HTTP + MCP | ✅ stdio |
 | **Language** | TypeScript | TypeScript | Python | Python | Python |
 
 > **When to choose Prism MCP:** You want MCP-native memory with zero infrastructure overhead, progressive context loading, and enterprise features (OCC, compaction, time travel, security scanning) that work directly in Claude Desktop — without running Qdrant, Postgres, or cloud services.
