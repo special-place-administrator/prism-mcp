@@ -19,6 +19,8 @@
 - [Quick Start](#quick-start-zero-config--local-mode)
 - [Mind Palace Dashboard](#-the-mind-palace-dashboard)
 - [Integration Examples](#integration-examples)
+- [Claude Code Integration (Hooks)](#claude-code-integration-hooks)
+- [Gemini / Antigravity Integration](#gemini--antigravity-integration)
 - [Use Cases](#use-cases)
 - [Architecture](#architecture)
 - [Tool Reference](#tool-reference)
@@ -363,36 +365,114 @@ Add to your Continue `config.json` or Cline MCP settings:
 
 ---
 
-## Claude Code + Gemini Startup Compatibility
+## Claude Code Integration (Hooks)
 
-If you want consistent behavior across clients, treat startup in two phases:
+Claude Code supports **lifecycle hooks** in `~/.claude/settings.json` that fire automatically at session start and end. Use these to auto-hydrate and persist Prism memory without manual prompting.
 
-1. **Server availability**: ensure `prism-mcp` is enabled in MCP config so tools are available.
-2. **Context hydration**: explicitly call `session_load_context` at session start.
+### SessionStart Hook
 
-Recommended startup call:
+Automatically loads context when a new session begins:
 
 ```json
 {
-  "projectName": "<your-project>",
-  "level": "standard"
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json; print(json.dumps({'continue': True, 'suppressOutput': False, 'systemMessage': 'At session start: 1) Call session_load_context with project=my-project and level=standard (do NOT pass role — the server reads it from the Prism dashboard settings). 2) After success, print PRISM_CONTEXT_LOADED.'}))\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
-Important distinction:
+### Stop Hook
 
-- Auto-loading `prism-mcp` makes the server available.
-- It does **not** guarantee memory context is auto-hydrated unless your client runtime/hook invokes `session_load_context`.
+Automatically saves session memory when a session ends:
 
-Client notes:
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json; print(json.dumps({'continue': True, 'suppressOutput': False, 'systemMessage': 'Before ending: call session_save_ledger first, then session_save_handoff with expected_version from the loaded version. Do NOT pass role — the server reads it from dashboard settings.'}))\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
-- **Gemini runtimes** may support native startup execution depending on configuration.
-- **Claude Code** should use a local `SessionStart` hook in `~/.claude/settings.json` for deterministic startup context loading.
+### Role Resolution — No Hardcoding Needed
 
-Verification pattern (same for both clients):
+Prism resolves the agent role dynamically using a priority chain:
 
-- Print a startup marker after successful `session_load_context` (for example, `PRISM_CONTEXT_LOADED`).
-- If the marker is missing, startup hydration did not run.
+```
+explicit tool argument  →  dashboard setting  →  "global" (default)
+```
+
+1. **Explicit arg wins** — if `role` is passed in the tool call, it's used directly.
+2. **Dashboard fallback** — if `role` is omitted, the server calls `getSetting("default_role")` and uses whatever role you configured in the **Mind Palace Dashboard ⚙️ Settings → Agent Identity**.
+3. **Final default** — if no dashboard setting exists, falls back to `"global"`.
+
+**This means hooks should NOT hardcode a role.** Change your role once in the dashboard, and it automatically applies to every session — CLI, extension, and all MCP clients.
+
+### Verification
+
+If hydration ran successfully, the agent's output will include:
+- A `[👤 AGENT IDENTITY]` block showing your dashboard-configured role and name
+- `PRISM_CONTEXT_LOADED` marker text
+
+If the marker is missing, the hook did not fire or the MCP server is not connected.
+
+---
+
+## Gemini / Antigravity Integration
+
+Gemini-based clients (like Antigravity) use `GEMINI.md` global rules or user rules for startup behavior. The same principle applies: **omit the role** and let the server resolve it from the dashboard.
+
+### Global Rules (`~/.gemini/GEMINI.md`)
+
+```markdown
+## Prism MCP Memory Auto-Load (CRITICAL)
+At the start of every new session, call `session_load_context`
+at the `standard` level for these projects:
+- `my-project`
+- `my-other-project`
+
+Do NOT pass a `role` parameter — the server reads the active role
+from the Prism dashboard settings automatically.
+```
+
+### User Rules (Antigravity Settings)
+
+If your Gemini client supports user rules, add the same instructions there. The key points:
+
+1. **Call `session_load_context` as a tool** — not `read_resource`. Only the tool returns the `[👤 AGENT IDENTITY]` block.
+2. **Omit `role`** — let the server resolve it from the dashboard.
+3. **Verify** — confirm the response includes `version` and `last_summary`.
+
+### Session End
+
+At the end of each session, save state:
+
+```markdown
+## Session End Protocol
+Before ending: call `session_save_ledger`, then `session_save_handoff`
+with `expected_version` from the loaded version. Omit `role`.
+```
 
 ---
 
@@ -763,48 +843,11 @@ The agent boots up knowing exactly what to do — zero prompting needed.
 
 For the best experience, configure your AI coding assistant to **automatically call `session_load_context`** at the start of every new session. This ensures your agent always boots with full project memory — no manual prompting needed.
 
-<details>
-<summary><strong>Claude Code (.clauderules / CLAUDE.md)</strong></summary>
+See the full setup guides for each client:
+- **[Claude Code Integration (Hooks)](#claude-code-integration-hooks)** — `SessionStart` and `Stop` hook JSON samples for `~/.claude/settings.json`
+- **[Gemini / Antigravity Integration](#gemini--antigravity-integration)** — global rules for `~/.gemini/GEMINI.md` or user rules
 
-Add this rule to your project's `.clauderules` or `CLAUDE.md`:
-
-```markdown
-
-## Prism MCP Memory Auto-Load (CRITICAL)
-At the start of every new session, you MUST call `session_load_context`
-at the `standard` level for these projects:
-- `my-project`
-- `my-other-project`
-
-Do NOT skip this step.
-```
-
-</details>
-
-<details>
-<summary><strong>Gemini / Antigravity (GEMINI.md)</strong></summary>
-
-Add this rule to your `~/.gemini/GEMINI.md` global rules file:
-
-```markdown
-
-## Prism MCP Memory Auto-Load (CRITICAL)
-
-**At the start of every new session**, immediately after displaying
-the startup block, you MUST call `session_load_context` (via the
-`prism-mcp` MCP server) at the `standard` level for these projects:
-- `my-project`
-- `my-other-project`
-
-This ensures accumulated project memory, pending TODOs, and key context
-from previous sessions are always available. Do NOT skip this step.
-
-**IMPORTANT:** The `prism-mcp` MCP server is always available.
-Do NOT display any warnings or notes about MCP server availability
-— just call the tools directly. Never claim the server is unavailable.
-```
-
-</details>
+> **Key principle:** Never hardcode a `role` in your hooks or rules. Set your role once in the **Mind Palace Dashboard ⚙️ Settings → Agent Identity**, and Prism automatically resolves it for every tool call across all clients. See [Role Resolution](#role-resolution--no-hardcoding-needed).
 
 > **Tip:** Replace `my-project` with your actual project identifiers. You can list as many projects as you need — each one gets its own independent memory timeline.
 
