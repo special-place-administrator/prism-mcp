@@ -14,7 +14,15 @@ import { closeConfigStorage } from "./storage/configStorage.js";
 import { getStorage } from "./storage/index.js";
 
 const PRISM_DIR = path.join(os.homedir(), ".prism-mcp");
-const PID_FILE = path.join(PRISM_DIR, "server.pid");
+
+/**
+ * Instance-aware PID file.
+ * Set PRISM_INSTANCE env var to run multiple Prism MCP servers
+ * side-by-side (e.g. "athena-public" and "prism-mcp").
+ * Each instance gets its own PID file to prevent lock conflicts.
+ */
+const INSTANCE_NAME = process.env.PRISM_INSTANCE || "default";
+const PID_FILE = path.join(PRISM_DIR, `server-${INSTANCE_NAME}.pid`);
 
 function log(msg: string) {
   console.error(`[Prism Lifecycle] ${msg}`);
