@@ -517,4 +517,35 @@ export class SupabaseStorage implements StorageBackend {
     }
   }
 
+  // ─── v4.2: Graduated Insights Query ──────────────────────────
+
+  async getGraduatedInsights(
+    project: string,
+    userId: string,
+    minImportance: number = 7
+  ): Promise<LedgerEntry[]> {
+    const data = await supabaseGet("session_ledger", {
+      project: `eq.${project}`,
+      user_id: `eq.${userId}`,
+      importance: `gte.${minImportance}`,
+      deleted_at: "is.null",
+      archived_at: "is.null",
+      select: "id,project,user_id,role,summary,importance,event_type,decisions,created_at",
+      order: "importance.desc,created_at.desc",
+    });
+    const rows = Array.isArray(data) ? data : [];
+    return rows.map((r: any) => ({
+      id: r.id,
+      project: r.project,
+      user_id: r.user_id,
+      role: r.role || "global",
+      summary: r.summary,
+      importance: r.importance || 0,
+      event_type: r.event_type || "session",
+      decisions: Array.isArray(r.decisions) ? r.decisions : [],
+      created_at: r.created_at,
+      conversation_id: "",
+    }));
+  }
+
 }

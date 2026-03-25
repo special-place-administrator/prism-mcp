@@ -42,13 +42,21 @@
 
 ---
 
-## What's New in v4.2.0 — Project Repo Registry 🗂️
+## What's New in v4.3.0 — The Bridge 🌉
+
+> **🧠 Active Behavioral Memory & IDE Sync**
+> Prism doesn't just log what happened—it learns. When an agent is corrected, the memory gains "Importance". Once an insight graduates (Importance >= 7), Prism can automatically sync it directly to your `.cursorrules` or `.clauderules` file, turning dynamic behavioral learnings into permanent, zero-token IDE enforcement.
+
+<details>
+<summary><strong>What's in v4.2.0 — Project Repo Registry 🗂️</strong></summary>
 
 | Feature | Description |
 |---|---|
 | 🗂️ **Project Repo Paths** | Map each project to its repo directory in the dashboard. `session_save_ledger` validates `files_changed` paths and warns on mismatch — prevents cross-project contamination. |
 | 🔄 **Universal Auto-Load** | Auto-load projects via dynamic tool descriptions — works across all MCP clients (Claude, Cursor, Gemini, Antigravity) without lifecycle hooks. Dashboard is the sole source of truth. |
 | 🏠 **Dashboard-First Config** | Removed `PRISM_AUTOLOAD_PROJECTS` env var override. The Mind Palace dashboard is now the single source of truth for auto-load project configuration. |
+
+</details>
 
 <details>
 <summary><strong>What's in v4.1.0 — Auto-Migration & Multi-Instance 🔀</strong></summary>
@@ -689,6 +697,41 @@ The tool and dashboard button both call the same repair logic — the dashboard 
 3. Stale entries **auto-decay** in importance over time
 4. On `session_load_context`, high-importance corrections auto-surface as `[⚠️ BEHAVIORAL WARNINGS]`
 5. Agent sees warnings and avoids repeating past mistakes
+
+### v4.2 Knowledge Sync Rules — "The Bridge"
+
+Bridges **v4.0 Behavioral Memory** (graduated insights) with **v4.2 Project Registry** (repo paths) to physically write agent learnings into your project's IDE rules file.
+
+| Feature | Without Sync Rules | With `knowledge_sync_rules` |
+|---------|-------------------|----------------------------|
+| **Insight Visibility** | Only in Prism context injection | Persisted as static IDE context (`.cursorrules` / `.clauderules`) |
+| **Cross-Session** | Loaded per-session via tool call | Always-on — IDE reads rules file on every prompt |
+| **Agent Learning Loop** | Behavioral warnings during context load | Rules enforced even without Prism connected |
+| **Idempotency** | N/A | Sentinel markers ensure safe re-runs |
+| **User Control** | View in dashboard | User-maintained rules preserved; only sentinel block updated |
+
+**Syncing graduated insights:**
+
+```json
+{ "name": "knowledge_sync_rules", "arguments": {
+    "project": "my-app",
+    "target_file": ".cursorrules",
+    "dry_run": true
+}}
+```
+
+**How it works:**
+1. Fetches graduated insights (`importance >= 7`) from the ledger
+2. Formats them as markdown rules inside `<!-- PRISM:AUTO-RULES:START/END -->` sentinel markers
+3. Idempotently writes them into the target file at the project's configured `repo_path`
+
+| Tool | Purpose | Key Args |
+|------|---------|----------|
+| `knowledge_sync_rules` | Sync graduated insights to IDE rules file | `project`, `target_file`, `dry_run` |
+| `knowledge_upvote` | Increase entry importance (+1) | `id` |
+| `knowledge_downvote` | Decrease entry importance (-1) | `id` |
+
+> 💡 **Prerequisite:** Set a `repo_path` for your project in the Mind Palace dashboard (⚙️ Settings → Project Repo Paths) before syncing.
 
 ### Code Mode Templates (v2.1)
 
@@ -1348,13 +1391,14 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 
 > **[View the full project board →](https://github.com/users/dcostenco/projects/1/views/1)**
 
-### ✅ v4.2 — Project Repo Registry (Shipped!)
+### ✅ v4.2 — Project Repo Registry + Knowledge Sync Rules (Shipped!)
 
 | Feature | Description |
 |---|---|
 | 🗂️ **Project Repo Paths** | Dashboard UI to map projects to repo directories + `session_save_ledger` path validation. |
 | 🔄 **Universal Auto-Load** | Dynamic tool descriptions replace env var — dashboard is sole source of truth. |
 | 🏠 **Dashboard-First Config** | Removed `PRISM_AUTOLOAD_PROJECTS` env var override. |
+| 🌉 **Knowledge Sync Rules** | `knowledge_sync_rules` — auto-sync graduated insights to `.cursorrules` / `.clauderules` with idempotent sentinel markers. |
 
 ### ✅ v4.1 — Auto-Migration & Multi-Instance (Shipped!)
 
@@ -1376,7 +1420,6 @@ See [What's in v3.0.0](#whats-in-v300--agent-hivemind-) above.
 
 | Feature | Issue | Description |
 |---------|-------|-------------|
-| Insight Graduation | — | `knowledge_upvote` / `knowledge_downvote` — importance ≥ 7 promotes to rule |
 | OpenTelemetry | [#6](https://github.com/dcostenco/prism-mcp/issues/6) | W3C tracing with Jaeger/Zipkin export |
 | GDPR Portability | [#7](https://github.com/dcostenco/prism-mcp/issues/7) | `session_export_memory` for Art. 20 |
 | CRDT Conflict Resolution | [#9](https://github.com/dcostenco/prism-mcp/issues/9) | Conflict-free types for concurrent edits |

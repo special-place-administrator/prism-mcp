@@ -154,6 +154,9 @@ import {
   sessionSaveExperienceHandler,
   knowledgeUpvoteHandler,
   knowledgeDownvoteHandler,
+  // v4.2: Knowledge Sync Rules
+  KNOWLEDGE_SYNC_RULES_TOOL,
+  knowledgeSyncRulesHandler,
   // ─── v3.0: Agent Hivemind tools ───
   AGENT_REGISTRY_TOOLS,
   agentRegisterHandler,
@@ -220,6 +223,8 @@ function buildSessionMemoryTools(autoloadList: string[]): Tool[] {
     SESSION_SAVE_EXPERIENCE_TOOL,  // session_save_experience — record typed experience events
     KNOWLEDGE_UPVOTE_TOOL,         // knowledge_upvote — increase entry importance
     KNOWLEDGE_DOWNVOTE_TOOL,       // knowledge_downvote — decrease entry importance
+    // ─── v4.2: Knowledge Sync Rules tool ───
+    KNOWLEDGE_SYNC_RULES_TOOL,     // knowledge_sync_rules — sync graduated insights to IDE rules files
   ];
 }
 
@@ -757,6 +762,12 @@ export function createServer() {
         case "knowledge_downvote":
           if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
           return await knowledgeDownvoteHandler(args);
+
+        // ─── v4.2: Knowledge Sync Rules Tool ───
+
+        case "knowledge_sync_rules":
+          if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
+          return await knowledgeSyncRulesHandler(args);
 
         // ─── v3.0: Agent Hivemind Tools ───
 

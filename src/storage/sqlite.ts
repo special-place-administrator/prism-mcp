@@ -1610,5 +1610,43 @@ export class SqliteStorage implements StorageBackend {
     debugLog(`[SqliteStorage] Adjusted importance for ${id} by ${delta > 0 ? "+" : ""}${delta}`);
   }
 
+  // ─── v4.2: Graduated Insights Query ──────────────────────────
+  //
+  // Returns ledger entries that have "graduated" — i.e., their
+  // importance score has reached the threshold (default 7).
+  // Used by knowledge_sync_rules to physically write insights
+  // into .cursorrules / .clauderules files at the project repo path.
+
+  async getGraduatedInsights(
+    project: string,
+    userId: string,
+    minImportance: number = 7
+  ): Promise<LedgerEntry[]> {
+    const result = await this.db.execute({
+      sql: `SELECT id, project, user_id, role, summary, importance,
+                   event_type, decisions, created_at
+            FROM session_ledger
+            WHERE project = ? AND user_id = ?
+              AND importance >= ?
+              AND deleted_at IS NULL
+              AND archived_at IS NULL
+            ORDER BY importance DESC, created_at DESC`,
+      args: [project, userId, minImportance],
+    });
+
+    return result.rows.map(row => ({
+      id: row.id as string,
+      project: row.project as string,
+      user_id: row.user_id as string,
+      role: (row.role as string) || "global",
+      summary: row.summary as string,
+      importance: Number(row.importance),
+      event_type: (row.event_type as string) || "session",
+      decisions: this.parseJsonColumn(row.decisions) as string[],
+      created_at: row.created_at as string,
+      conversation_id: "",
+    }));
+  }
+
 }
 

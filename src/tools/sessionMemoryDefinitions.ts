@@ -923,3 +923,53 @@ export function isKnowledgeVoteArgs(
     typeof (args as { id: string }).id === "string"
   );
 }
+
+// ─── v4.2: Knowledge Sync Rules Tool ─────────────────────────
+
+export const KNOWLEDGE_SYNC_RULES_TOOL: Tool = {
+  name: "knowledge_sync_rules",
+  description:
+    "Auto-sync graduated insights (importance >= 7) into your project's IDE rules file " +
+    "(.cursorrules or .clauderules). This bridges behavioral memory with static IDE context — " +
+    "turning dynamic agent learnings into always-on rules.\n\n" +
+    "**How it works:**\n" +
+    "1. Fetches graduated insights from the ledger\n" +
+    "2. Formats them as markdown rules inside sentinel markers\n" +
+    "3. Idempotently writes them into the target file at the project's configured repo_path\n\n" +
+    "**Requirements:** The project must have a repo_path configured in the dashboard.\n\n" +
+    "**Idempotency:** Uses `<!-- PRISM:AUTO-RULES:START -->` / `<!-- PRISM:AUTO-RULES:END -->` " +
+    "sentinel markers. Running this tool multiple times produces the same file. " +
+    "User-maintained content outside the sentinels is never touched.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      project: {
+        type: "string",
+        description: "Project identifier. Must have a repo_path configured in the dashboard.",
+      },
+      target_file: {
+        type: "string",
+        description:
+          "Target rules filename (default: '.cursorrules'). " +
+          "Common values: '.cursorrules', '.clauderules'.",
+      },
+      dry_run: {
+        type: "boolean",
+        description: "If true, returns a preview of the rules block without writing to disk. Default: false.",
+      },
+    },
+    required: ["project"],
+  },
+};
+
+export function isKnowledgeSyncRulesArgs(
+  args: unknown
+): args is { project: string; target_file?: string; dry_run?: boolean } {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    "project" in args &&
+    typeof (args as { project: string }).project === "string"
+  );
+}
+

@@ -441,6 +441,18 @@ export interface StorageBackend {
    * @param userId - Owner verification (MUST match entry's user_id)
    */
   adjustImportance(id: string, delta: number, userId: string): Promise<void>;
+
+  /**
+   * Fetch graduated insights for a project.
+   * Returns ledger entries with importance >= minImportance (default 7),
+   * excluding archived and soft-deleted entries.
+   * Used by knowledge_sync_rules to sync insights into IDE rules files.
+   *
+   * @param project - Project identifier
+   * @param userId - Owner verification
+   * @param minImportance - Minimum importance threshold (default: 7)
+   */
+  getGraduatedInsights(project: string, userId: string, minImportance?: number): Promise<LedgerEntry[]>;
 }
 
 // ─── v3.1 Types ────────────────────────────────────────────────
