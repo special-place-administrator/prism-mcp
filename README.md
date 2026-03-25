@@ -14,7 +14,7 @@
 
 ## Table of Contents
 
-- [What's New (v4.3.0)](#whats-new-in-v430--the-bridge-)
+- [What's New (v4.6.0)](#whats-new-in-v460--opentelemetry-observability-)
 - [Multi-Instance Support](#multi-instance-support)
 - [How Prism Compares](#how-prism-compares)
 - [Quick Start](#quick-start-zero-config--local-mode)
@@ -42,10 +42,54 @@
 
 ---
 
-## What's New in v4.3.0 — The Bridge 🌉
+## What's New in v4.6.0 — OpenTelemetry Observability 🔭
+
+> **🔭 Full distributed tracing for every MCP tool call, LLM provider hop, and background AI worker.**
+> Configure in the new **🔭 Observability** tab in Mind Palace — no code changes required.
+> Activates a 4-tier span waterfall: `mcp.call_tool` → `worker.vlm_caption` → `llm.generate_image_description` / `llm.generate_embedding`.
+
+<a name="whats-new-in-v451--gdpr-export-"></a>
+<details>
+<summary><strong>What's in v4.5.1 — GDPR Export & Test Hardening 🔒</strong></summary>
+
+| Feature | Description |
+|---|---|
+| 📦 **`session_export_memory`** | Full ZIP export of project memory (JSON + Markdown). Satisfies GDPR Art. 20 Right to Portability. API keys redacted, embeddings stripped. |
+| 🧪 **270 Tests** | Concurrent export safety, redaction edge cases, MCP contract validation under load. |
+
+</details>
+
+<a name="whats-new-in-v450--vlm-multimodal-memory-"></a>
+<details>
+<summary><strong>What's in v4.5.0 — VLM Multimodal Memory 👁️</strong></summary>
+
+| Feature | Description |
+|---|---|
+| 👁️ **Visual Memory** | `session_save_image` → VLM auto-caption → ledger entry → vector embedding. Images become semantically searchable with zero schema changes. |
+| 🛡️ **Provider Size Guards** | Anthropic 5MB hard cap, Gemini/OpenAI 20MB. Pre-flight check before API call. |
+
+</details>
+
+<a name="whats-new-in-v440--pluggable-llm-adapters-"></a>
+<details>
+<summary><strong>What's in v4.4.0 — Pluggable LLM Adapters (BYOM) 🔌</strong></summary>
+
+| Feature | Description |
+|---|---|
+| 🔌 **BYOM** | OpenAI, Anthropic, Gemini, Ollama adapters. Text + embedding providers independently configurable. |
+| 🛡️ **Air-Gapped** | Full local mode via `http://127.0.0.1:11434` — zero cloud API keys required. |
+
+</details>
+
+<a name="whats-new-in-v430--the-bridge-"></a>
+<details>
+<summary><strong>What's in v4.3.0 — The Bridge: Knowledge Sync Rules 🌉</strong></summary>
 
 > **🧠 Active Behavioral Memory & IDE Sync**
-> Prism doesn't just log what happened—it learns. When an agent is corrected, the memory gains "Importance". Once an insight graduates (Importance >= 7), Prism can automatically sync it directly to your `.cursorrules` or `.clauderules` file, turning dynamic behavioral learnings into permanent, zero-token IDE enforcement.
+> Prism doesn't just log what happened—it learns. When an agent is corrected, the memory gains "Importance". Once an insight graduates (Importance >= 7), Prism automatically syncs it to `.cursorrules` / `.clauderules` — permanent, zero-token IDE enforcement.
+
+</details>
+
 
 <a name="whats-new-in-v420--project-repo-registry-"></a>
 <details>
@@ -1157,7 +1201,7 @@ Prism supports surgical, per-entry deletion for GDPR Article 17 compliance:
 | Data Protection by Design (Art. 25) | ✅ Implemented | Ownership guards, DB-level filtering, safe defaults |
 | Audit Trail | ✅ Implemented | `deleted_at` + `deleted_reason` columns |
 | User Isolation | ✅ Implemented | `user_id` verification on all delete operations |
-| Right to Portability (Art. 20) | ⬜ Roadmap | `session_export_memory` (planned) |
+| Right to Portability (Art. 20) | ✅ Implemented | `session_export_memory` — ZIP export of JSON + Markdown, API keys redacted |
 | Consent Management | ➖ Out of scope | Application-layer responsibility |
 
 > **Note:** No software is "GDPR certified" on its own — GDPR is an organizational compliance framework. Prism provides the technical controls that a DPO (Data Protection Officer) needs to satisfy the data deletion and privacy-by-design requirements.
@@ -1166,40 +1210,50 @@ Prism supports surgical, per-entry deletion for GDPR Article 17 compliance:
 
 ## Observability & Tracing
 
-Prism MCP includes a custom **MemoryTrace** engine that provides per-query observability for every memory operation. This is not the OpenTelemetry SDK — it's a lightweight, zero-dependency tracing system purpose-built for MCP.
+Prism MCP ships **two complementary tracing systems** serving different audiences:
 
-### What MemoryTrace Provides
+| | MemoryTrace | OpenTelemetry (OTel) |
+|---|---|---|
+| **Question answered** | Why was this memory returned? | What was the end-to-end latency? |
+| **Output** | `content[1]` in MCP response | OTLP → Jaeger / Tempo / Zipkin |
+| **Trigger** | `enable_trace: true` parameter | Every tool call, automatically |
+| **Audience** | LLM / LangSmith orchestration | Developers debugging infrastructure |
 
-| Capability | MemoryTrace | Full OpenTelemetry SDK |
-|------------|:-----------:|:----------------------:|
-| Per-query latency breakdown (`embedding_ms`, `storage_ms`, `total_ms`) | ✅ | ✅ |
-| Search strategy attribution (`semantic`, `keyword`, `hybrid`) | ✅ | ❌ (custom) |
-| Result scoring metadata | ✅ | ❌ (custom) |
-| LangSmith integration (via retriever metadata) | ✅ | ✅ |
-| W3C `traceparent` / distributed trace context | ❌ | ✅ |
-| Export to Jaeger / Zipkin / Datadog | ❌ | ✅ |
-| Auto-instrumentation of HTTP / DB calls | ❌ | ✅ |
-| External SDK dependency | **None** | `@opentelemetry/sdk-*` |
+### MemoryTrace (Phase 1 — LLM Explainability)
 
-### Example MemoryTrace Output
+A zero-dependency tracing system built for MCP. Returns per-query latency breakdowns and result scoring metadata as a second `content` block — keeping structured telemetry out of the LLM's context window.
 
 ```json
-{
-  "type": "text",
-  "text": "{\"trace\":{\"strategy\":\"semantic\",\"latency\":{\"embedding_ms\":45,\"storage_ms\":12,\"total_ms\":57},\"result_count\":3,\"threshold\":0.7}}"
-}
+{ "trace": { "strategy": "semantic", "latency": { "embedding_ms": 45, "storage_ms": 12, "total_ms": 57 }, "result_count": 3 } }
 ```
 
-Traces are returned as `content[1]` in MCP responses — a separate content block that keeps structured telemetry out of the LLM's context window while making it available to orchestration layers like LangSmith.
+### OpenTelemetry (Phase 2 — Infrastructure Observability)
 
-### Roadmap
+Every MCP tool call emits a **4-tier span waterfall** to any OTLP-compatible collector:
 
-| Feature | Status |
-|---------|--------|
-| MemoryTrace (current) | ✅ Shipped |
-| OpenTelemetry SDK integration | ⬜ Planned |
-| Span export to Jaeger/Zipkin | ⬜ Planned |
-| W3C Trace Context propagation | ⬜ Planned |
+```
+mcp.call_tool  [e.g. session_save_image, ~50 ms]
+  └─ worker.vlm_caption          [~2–5 s, outlives parent ✓]
+       └─ llm.generate_image_description  [~1–4 s]
+       └─ llm.generate_embedding          [~200 ms]
+```
+
+**Quick-start with Jaeger:**
+
+```bash
+docker run -d -p 4318:4318 -p 16686:16686 jaegertracing/all-in-one
+```
+
+Then open **Mind Palace Dashboard → ⚙️ Settings → 🔭 Observability**, toggle OTel on, and restart. Open [localhost:16686](http://localhost:16686) to see traces.
+
+**GDPR-safe by design:** Span attributes capture only character counts and byte sizes — never prompt content, vector embeddings, or base64 image data.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `otel_enabled` | `false` | Toggle OTel pipeline on/off (restart required) |
+| `otel_endpoint` | `http://localhost:4318/v1/traces` | OTLP HTTP collector URL |
+| `otel_service_name` | `prism-mcp-server` | Service label in trace UI |
+
 
 ---
 
@@ -1366,7 +1420,10 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 │   │   ├── compactionHandler.ts         # Gemini-powered ledger compaction
 │   │   └── index.ts                     # Tool registration & re-exports
 │   └── utils/
-│       ├── tracing.ts                   # MemoryTrace types + factory (Phase 1)
+│   └── utils/
+│       ├── telemetry.ts                 # OTel singleton — NodeTracerProvider, BatchSpanProcessor, no-op mode
+│       ├── tracing.ts                   # MemoryTrace types + factory (Phase 1 — LLM explainability)
+│       ├── imageCaptioner.ts            # VLM auto-caption pipeline (v4.5) + worker.vlm_caption OTel span
 │       ├── logger.ts                    # Debug logging (gated by PRISM_DEBUG_LOGGING)
 │       ├── braveApi.ts                  # Brave Search REST client
 │       ├── googleAi.ts                  # Gemini SDK wrapper
@@ -1375,8 +1432,17 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 │       ├── healthCheck.ts               # Brain integrity engine + security scanner
 │       ├── factMerger.ts                # Async LLM contradiction resolution
 │       ├── git.ts                       # Git state capture + drift detection
-│       ├── embeddingApi.ts              # Embedding generation (Gemini)
-│       └── keywordExtractor.ts          # Zero-dependency NLP keyword extraction
+│       ├── embeddingApi.ts              # Embedding generation
+│       ├── keywordExtractor.ts          # Zero-dependency NLP keyword extraction
+│       └── llm/
+│           ├── provider.ts              # LLMProvider interface
+│           ├── factory.ts               # Provider factory — composes + wraps in TracingLLMProvider
+│           └── adapters/
+│               ├── gemini.ts            # Google Gemini adapter
+│               ├── openai.ts            # OpenAI adapter
+│               ├── anthropic.ts         # Anthropic Claude adapter
+│               ├── ollama.ts            # Ollama (local) adapter
+│               └── traced.ts            # TracingLLMProvider decorator (v4.6 OTel)
 ├── examples/langgraph-agent/            # LangChain/LangGraph integration
 │   ├── agent.py                         # 5-node LangGraph research agent
 │   ├── mcp_client.py                    # MCP Bridge (call_tool + call_tool_raw)
@@ -1394,19 +1460,36 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 
 ## 🚀 Roadmap
 
-> **[View the full project board →](https://github.com/users/dcostenco/projects/1/views/1)**
+> **[View the full project board →](https://github.com/users/dcostenco/projects/1/views/1)** | **[Full ROADMAP.md →](ROADMAP.md)**
 
-### 🚧 v4.4 — Pluggable LLM Adapters (BYOM)
+### ✅ v4.6 — OpenTelemetry Observability (Shipped!)
 
 | Feature | Description |
 |---|---|
-| 🔌 **Bring Your Own Model** | Abstract Gemini dependencies into a unified `LLMProvider` interface to support OpenAI, Anthropic, and local Ollama deployments. |
-| 🎛️ **Dashboard Configuration** | Global boot settings to define LLM/Embedding providers and securely store their respective API keys. |
-| 🛡️ **Air-Gapped Privacy** | Full local model execution utilizing `http://127.0.0.1:11434` as the embedding and generation backbone. |
+| 🔭 **OTel Root Span** | Every MCP tool call wrapped in `mcp.call_tool` span — propagated to all child async operations via AsyncLocalStorage. |
+| 🎨 **TracingLLMProvider** | Decorator pattern wraps the composed LLM factory. Zero changes to vendor adapters. Instruments `generate_text`, `generate_embedding`, `generate_image_description`. |
+| ⚙️ **Worker Spans** | `worker.vlm_caption` span in `imageCaptioner` correctly parents fire-and-forget async tasks to the root span. |
+| 🔒 **Shutdown Flush** | `shutdownTelemetry()` wired as step-0 in `lifecycle.ts` — flushes `BatchSpanProcessor` before DB closes on SIGTERM. |
+| 🖥️ **Dashboard UI** | New 🔭 Observability tab with enable toggle, OTLP endpoint, service name, inline Jaeger docker command, and ASCII waterfall diagram. |
+
+### ✅ v4.5 — VLM Multimodal Memory & GDPR Export (Shipped!)
+
+| Feature | Description |
+|---|---|
+| 👁️ **Auto-Captioning** | `session_save_image` → VLM → ledger entry → vector embedding. Images become semantically searchable with zero schema changes. |
+| 📦 **GDPR Art. 20** | `session_export_memory` — full ZIP export (JSON + Markdown), API keys redacted, embeddings stripped. |
+| 🧪 **270 tests** | Full regression coverage including concurrent safety, redaction edge cases, and MCP contract validation. |
+
+### ✅ v4.4 — Pluggable LLM Adapters (Shipped!)
+
+| Feature | Description |
+|---|---|
+| 🔌 **BYOM** | OpenAI, Anthropic, Gemini, Ollama adapters. Text + embedding providers independently configurable. |
+| 🛡️ **Air-Gapped** | Full local mode via Ollama — zero cloud API keys required. |
 
 ### ✅ v4.3 — The Bridge: Knowledge Sync Rules (Shipped!)
 
-See [What's in v4.3.0](#whats-new-in-v430--the-bridge-) above for details on syncing dynamic behavioral insights to static IDE rules files.
+See [What's in v4.3.0](#whats-new-in-v430--the-bridge-) above — syncing dynamic behavioral insights to static IDE rules files.
 
 ### ✅ v4.2 — Project Repo Registry (Shipped!)
 
@@ -1414,7 +1497,6 @@ See [What's in v4.3.0](#whats-new-in-v430--the-bridge-) above for details on syn
 |---|---|
 | 🗂️ **Project Repo Paths** | Dashboard UI to map projects to repo directories + `session_save_ledger` path validation. |
 | 🔄 **Universal Auto-Load** | Dynamic tool descriptions replace env var — dashboard is sole source of truth. |
-| 🏠 **Dashboard-First Config** | Removed `PRISM_AUTOLOAD_PROJECTS` env var override. |
 
 ### ✅ v4.1 — Auto-Migration & Multi-Instance (Shipped!)
 
@@ -1424,34 +1506,22 @@ See [What's in v4.1.0](#whats-in-v410--auto-migration--multi-instance-) above.
 
 See [What's in v4.0.0](#whats-in-v400--behavioral-memory-) above.
 
-### ✅ v3.1 — Memory Lifecycle (Shipped!)
+### ✅ v3.x — Memory Lifecycle & Agent Hivemind (Shipped!)
 
-See [What's in v3.1.0](#whats-in-v310--memory-lifecycle-) above.
+See [v3.1.0](#whats-in-v310--memory-lifecycle-) and [v3.0.0](#whats-in-v300--agent-hivemind-) above.
 
-### ✅ v3.0 — Agent Hivemind (Shipped!)
+---
 
-See [What's in v3.0.0](#whats-in-v300--agent-hivemind-) above.
+### 🗺️ Next on the Horizon
 
-### 🚀 Future Ideas
-
-| Feature | Issue | Description |
-|---------|-------|-------------|
-| OpenTelemetry | [#6](https://github.com/dcostenco/prism-mcp/issues/6) | W3C tracing with Jaeger/Zipkin export |
-| GDPR Portability | [#7](https://github.com/dcostenco/prism-mcp/issues/7) | `session_export_memory` for Art. 20 |
-| CRDT Conflict Resolution | [#9](https://github.com/dcostenco/prism-mcp/issues/9) | Conflict-free types for concurrent edits |
-| Pluggable LLM Providers | [#13](https://github.com/dcostenco/prism-mcp/issues/13) | Anthropic, OpenAI, Ollama adapters |
-| VLM / OCR for Images | [#14](https://github.com/dcostenco/prism-mcp/issues/14) | Auto-extract text from stored images |
-| Knowledge Graph Editor | [#19](https://github.com/dcostenco/prism-mcp/issues/19) | Visual graph editor in Mind Palace |
-
-### 🧰 Infrastructure & Stack
-
-| Feature | Issue | Description |
-|---------|-------|-------------|
-| Supabase RPC Soft-Delete Filtering | [#8](https://github.com/dcostenco/prism-mcp/issues/8) | Server-side RPC filtering for GDPR-deleted records |
-| Pluggable Embedding Providers | [#11](https://github.com/dcostenco/prism-mcp/issues/11) | Swap Gemini for OpenAI, Cohere, or local models |
-| Automated Test Suite | [#12](https://github.com/dcostenco/prism-mcp/issues/12) | Unit, integration, and E2E test coverage with CI/CD |
-| Mind Palace Auth & Secure Access | [#15](https://github.com/dcostenco/prism-mcp/issues/15) | Authentication for the dashboard when exposed remotely |
-| TypeScript LangGraph & Vercel AI SDK Examples | [#18](https://github.com/dcostenco/prism-mcp/issues/18) | Reference implementations for popular frameworks |
+| Priority | Feature | Description |
+|----------|---------|-------------|
+| 🥇 | **Documentation & Architecture Guide** | Full README overhaul with architecture diagrams, "How to build a self-improving agent" walkthrough, and v4.x feature matrix. |
+| 🥈 | **Knowledge Graph Editor** | Visual graph in Mind Palace showing nodes for projects, agents, sessions, and graduated rules. |
+| 🥉 | **Autonomous Web Scholar** | Agent-driven learning pipeline using Brave Search + VLM to autonomously build project context while the developer sleeps. |
+| — | **Dashboard Auth** | Optional basic auth for remote Mind Palace access. |
+| — | **TypeScript LangGraph Examples** | Reference implementations alongside the existing Python agent. |
+| — | **CRDT Conflict Resolution** | Conflict-free types for concurrent multi-agent edits on the same handoff. |
 
 ---
 
@@ -1461,4 +1531,4 @@ MIT
 
 ---
 
-<sub>**Keywords:** MCP server, Model Context Protocol, Claude Desktop memory, persistent session memory, AI agent memory, local-first, SQLite MCP, Mind Palace, time travel, visual memory, agent telepathy, multi-agent sync, reality drift detection, morning briefing, code mode templates, cursor MCP server, windsurf MCP server, cline MCP server, pgvector semantic search, progressive context loading, MCP Prompts, MCP Resources, knowledge management AI, Brave Search MCP, Gemini analysis, optimistic concurrency control, zero config, GDPR compliant, memory tracing, LangChain retriever, LangGraph agent, soft delete, memory lineage, explainability, enterprise AI memory</sub>
+<sub>**Keywords:** MCP server, Model Context Protocol, Claude Desktop memory, persistent session memory, AI agent memory, local-first, SQLite MCP, Mind Palace, time travel, visual memory, VLM image captioning, OpenTelemetry OTel tracing, Jaeger distributed traces, GDPR export portability, agent telepathy, multi-agent sync, behavioral memory, IDE rules sync, cursorrules, pluggable LLM, Ollama MCP, Anthropic Claude MCP, OpenAI MCP, reality drift detection, morning briefing, code mode templates, cursor MCP server, windsurf MCP server, cline MCP server, pgvector semantic search, progressive context loading, MCP Prompts, MCP Resources, knowledge management AI, Brave Search MCP, Gemini analysis, optimistic concurrency control, zero config, memory tracing, LangChain retriever, LangGraph agent, soft delete, memory lineage, explainability, enterprise AI memory</sub>
