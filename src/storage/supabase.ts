@@ -484,6 +484,20 @@ export class SupabaseStorage implements StorageBackend {
       debugLog("[SupabaseStorage] expireByTTL failed: " + (e instanceof Error ? e.message : String(e)));
     }
 
+    // Fix #5: Decay importance parity with SQLite.
+    // Run after the TTL sweep so stale high-importance entries also fade.
+    try {
+      await supabaseRpc("prism_decay_importance", {
+        p_project: project,
+        p_user_id: userId,
+        p_days: 30,
+      });
+      debugLog(`[SupabaseStorage] Importance decay sweep completed for "${project}"`);
+    } catch (e) {
+      // Non-fatal: decay is a best-effort background operation
+      debugLog("[SupabaseStorage] prism_decay_importance failed (non-fatal): " + (e instanceof Error ? e.message : String(e)));
+    }
+
     // Supabase PATCH doesn't return rowsAffected — return 0 (UI doesn't need exact count)
     debugLog(`[SupabaseStorage] TTL sweep completed for "${project}" (cutoff: ${cutoffStr})`);
     return { expired: 0 };
@@ -496,24 +510,20 @@ export class SupabaseStorage implements StorageBackend {
     delta: number,
     userId: string
   ): Promise<void> {
-    // Supabase PATCH can't do MAX(0, importance + delta) directly.
-    // Fetch current value first, compute new, then patch.
+    // Fix #4: Use atomic RPC instead of read-then-write.
+    // prism_adjust_importance computes MAX(0, importance + delta) in one
+    // SQL UPDATE, eliminating the race condition in the old pattern.
     try {
-      const data = await supabaseGet("session_ledger", {
-        id: `eq.${id}`,
-        user_id: `eq.${userId}`,
-        select: "importance",
+      await supabaseRpc("prism_adjust_importance", {
+        p_id: id,
+        p_user_id: userId,
+        p_delta: delta,
       });
-      const rows = Array.isArray(data) ? data : [];
-      const current = (rows[0] as any)?.importance ?? 0;
-      const newVal = Math.max(0, current + delta);
-      await supabasePatch("session_ledger", { importance: newVal }, {
-        id: `eq.${id}`,
-        user_id: `eq.${userId}`,
-      });
-      debugLog(`[SupabaseStorage] Adjusted importance for ${id} by ${delta > 0 ? "+" : ""}${delta} (${current} → ${newVal})`);
+      debugLog(`[SupabaseStorage] Adjusted importance for ${id} by ${delta > 0 ? "+" : ""}${delta} via RPC`);
     } catch (e) {
-      debugLog("[SupabaseStorage] adjustImportance failed: " + (e instanceof Error ? e.message : String(e)));
+      const msg = e instanceof Error ? e.message : String(e);
+      debugLog("[SupabaseStorage] adjustImportance failed: " + msg);
+      throw e; // Fix #3: rethrow so handlers can surface isError:true
     }
   }
 

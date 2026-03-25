@@ -68,7 +68,48 @@ export const MIGRATIONS: Migration[] = [
           AND deleted_at IS NULL AND archived_at IS NULL;
     `,
   },
-  // Future migrations go here (version 28+)
+  {
+    version: 28,
+    name: "importance_rpcs",
+    sql: `
+      -- Fix #4: Atomic importance adjustment — eliminates read-then-write race condition
+      CREATE OR REPLACE FUNCTION prism_adjust_importance(
+        p_id TEXT, p_user_id TEXT, p_delta INTEGER
+      )
+      RETURNS void
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      AS $$
+      BEGIN
+        UPDATE session_ledger
+        SET importance = GREATEST(0, importance + p_delta)
+        WHERE id = p_id AND user_id = p_user_id;
+      END;
+      $$;
+
+      -- Fix #5: Importance decay — parity with SQLite backend
+      CREATE OR REPLACE FUNCTION prism_decay_importance(
+        p_project TEXT, p_user_id TEXT, p_days INTEGER
+      )
+      RETURNS void
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      AS $$
+      BEGIN
+        UPDATE session_ledger
+        SET importance = GREATEST(0, importance - 1)
+        WHERE project = p_project
+          AND user_id = p_user_id
+          AND importance > 0
+          AND event_type <> 'session'
+          AND created_at < now() - (p_days || ' days')::interval
+          AND deleted_at IS NULL
+          AND archived_at IS NULL;
+      END;
+      $$;
+    `,
+  },
+  // Future migrations go here (version 29+)
 ];
 
 /**
