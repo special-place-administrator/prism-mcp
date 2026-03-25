@@ -1391,6 +1391,14 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 
 > **[View the full project board →](https://github.com/users/dcostenco/projects/1/views/1)**
 
+### 🚧 v4.4 — Pluggable LLM Adapters (BYOM)
+
+| Feature | Description |
+|---|---|
+| 🔌 **Bring Your Own Model** | Abstract Gemini dependencies into a unified `LLMProvider` interface to support OpenAI, Anthropic, and local Ollama deployments. |
+| 🎛️ **Dashboard Configuration** | Global boot settings to define LLM/Embedding providers and securely store their respective API keys. |
+| 🛡️ **Air-Gapped Privacy** | Full local model execution utilizing `http://127.0.0.1:11434` as the embedding and generation backbone. |
+
 ### ✅ v4.3 — The Bridge: Knowledge Sync Rules (Shipped!)
 
 See [What's in v4.3.0](#whats-new-in-v430--the-bridge-) above for details on syncing dynamic behavioral insights to static IDE rules files.
