@@ -271,8 +271,11 @@
 | **Auto-Compaction** | ✅ Gemini rollups | ❌ | ❌ | ❌ | ❌ |
 | **Morning Briefing** | ✅ Gemini synthesis | ❌ | ❌ | ❌ | ❌ |
 | **OCC (Concurrency)** | ✅ Version-based | ❌ | ❌ | ❌ | ❌ |
-| **GDPR Compliance** | ✅ Soft/hard delete | ❌ | ❌ | ❌ | ❌ |
+| **GDPR Compliance** | ✅ Soft/hard delete + ZIP export | ❌ | ❌ | ❌ | ❌ |
 | **Memory Tracing** | ✅ Latency breakdown | ❌ | ❌ | ❌ | ❌ |
+| **OpenTelemetry** | ✅ OTLP spans (v4.6) | ❌ | ❌ | ❌ | ❌ |
+| **VLM Image Captions** | ✅ Auto-caption vault (v4.5) | ❌ | ❌ | ❌ | ❌ |
+| **Pluggable LLM Adapters** | ✅ OpenAI/Anthropic/Gemini/Ollama | ❌ | ✅ Multi-provider | ❌ | ❌ |
 | **LangChain** | ✅ BaseRetriever | ❌ | ❌ | ❌ | ❌ |
 | **MCP Native** | ✅ stdio | ✅ stdio | ❌ Python SDK | ✅ HTTP + MCP | ✅ stdio |
 | **Language** | TypeScript | TypeScript | Python | Python | Python |
@@ -586,15 +589,104 @@ At the end of each session, save state:
 
 ## Use Cases
 
-| Scenario | How Prism MCP Helps |
-|----------|-------------------|
-| **Long-running feature work** | Save session state at end of day, restore full context the next morning — no re-explaining |
-| **Multi-agent collaboration** | Telepathy sync lets multiple agents share context in real time |
-| **Consulting / multi-project** | Switch between client projects with progressive context loading |
-| **Research & analysis** | Multi-engine search with 94% context reduction via sandboxed code transforms |
-| **Team onboarding** | New team member's agent loads full project history via `session_load_context("deep")` |
-| **Visual debugging** | Save screenshots of broken UI to visual memory — the agent remembers what it looked like |
-| **Offline / air-gapped** | Full SQLite local mode with no internet dependency for memory features |
+| Scenario | How Prism MCP Helps | Live Sample |
+|----------|---------------------|-------------|
+| **Long-running feature work** | Save session state at end of day, restore full context next morning — no re-explaining | `session_save_handoff(project, last_summary, open_todos)` |
+| **Multi-agent collaboration** | Hivemind Telepathy lets multiple agents share real-time context across clients | `session_load_context(project, role="qa")` |
+| **Consulting / multi-project** | Switch between client projects with progressive context loading | `session_load_context(project, level="quick")` |
+| **Research & analysis** | Multi-engine search with 94% context reduction via sandboxed code transforms | `brave_web_search` + `code_mode_transform(template="api_endpoints")` |
+| **Team onboarding** | New team member's agent loads full project history instantly | `session_load_context(project, level="deep")` |
+| **Visual debugging** | Save UI screenshots to visual memory — searchable by description | `session_save_image(project, path, description)` → `session_view_image(id)` |
+| **Offline / air-gapped** | Full SQLite local mode, Ollama LLM adapter — zero internet dependency | `PRISM_LLM_PROVIDER=ollama` in MCP config env |
+| **Behavior enforcement** | Agent corrections auto-graduate into permanent `.cursorrules` | `session_save_experience(event_type="correction")` → `knowledge_sync_rules(project)` |
+| **Infrastructure observability** | OTel spans to Jaeger/Grafana for every MCP tool call fanout | Enable in Dashboard → Settings → 🔭 Observability |
+| **GDPR / audit export** | ZIP export of all memory as JSON + Markdown, sensitive fields redacted | `session_export_memory(project, format="zip")` |
+
+---
+
+## New in v4.6.0 — Feature Setup Guide
+
+### 🔭 OpenTelemetry Distributed Tracing
+
+**Why:** Every `session_save_ledger` call can silently fan out into a synchronous DB write, an async VLM caption, and a vector embedding backfill. Without tracing, these are invisible. OTel makes the full call tree visible in Jaeger, Grafana Tempo, or any OTLP-compatible collector.
+
+**Setup:**
+1. Open Mind Palace Dashboard → ⚙️ Settings → 🔭 Observability
+2. Toggle **Enable OpenTelemetry** → set your OTLP endpoint (default: `http://localhost:4318`)
+3. Restart the MCP server
+4. Run Jaeger locally:
+```bash
+docker run -d --name jaeger \
+  -p 16686:16686 -p 4318:4318 \
+  jaegertracing/all-in-one:latest
+```
+5. Open http://localhost:16686 — select service `prism-mcp` to see span waterfalls.
+
+**Span hierarchy:**
+```
+mcp.call_tool [session_save_ledger]
+├── storage.write_ledger          ~2ms
+├── llm.generate_embedding        ~180ms
+└── worker.vlm_caption (async)    ~1.2s
+```
+
+> GDPR note: Span attributes contain only metadata — no prompt content, embeddings, or image data.
+
+---
+
+### 🖼️ VLM Multimodal Memory
+
+**Why:** Agents lose visual context between sessions. UI screenshots, architecture diagrams, and bug states all become searchable memory.
+
+**Setup:** Requires `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` (vision-capable model).
+
+**Usage:**
+```
+session_save_image(project="my-app", file_path="/path/to/screenshot.png", description="Login page broken layout after CSS refactor")
+```
+The image is auto-captioned by a VLM and stored in the media vault. Retrieve later:
+```
+session_view_image(project="my-app", image_id="8f2a1b3c")
+```
+
+---
+
+### 🔌 Pluggable LLM Adapters
+
+**Why:** Run fully local/air-gapped with Ollama, or switch providers without changing tool logic.
+
+**Setup:** Set in MCP config `env`:
+
+```json
+{
+  "env": {
+    "PRISM_LLM_PROVIDER": "ollama",
+    "PRISM_LLM_MODEL": "llama3.2",
+    "PRISM_LLM_BASE_URL": "http://localhost:11434"
+  }
+}
+```
+
+| Provider | Env Var | Notes |
+|----------|---------|-------|
+| `gemini` (default) | `GOOGLE_API_KEY` | Best for Morning Briefings |
+| `openai` | `OPENAI_API_KEY` | GPT-4o supports VLM |
+| `anthropic` | `ANTHROPIC_API_KEY` | Claude 3.5 supports VLM |
+| `ollama` | none | Full local/air-gapped mode |
+
+---
+
+### 📦 GDPR Memory Export
+
+```
+session_export_memory(project="my-app", format="zip")
+```
+
+Outputs a ZIP containing:
+- `ledger.json` — all session entries
+- `handoffs.json` — all project state snapshots  
+- `knowledge.md` — graduated insights in Markdown
+- Sensitive fields (API keys, tokens) automatically redacted
 
 ---
 
