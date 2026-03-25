@@ -34,8 +34,7 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";  // Gemini SDK for LLM calls
-import { GOOGLE_API_KEY } from "../config.js";               // API key from environment
+import { getLLMProvider } from "./llm/factory.js";
 import { debugLog } from "./logger.js";
 
 /**
@@ -61,9 +60,12 @@ export async function consolidateFacts(
   oldContext: string,
   newContext: string
 ): Promise<string> {
-  // Guard: need API key to call Gemini
-  if (!GOOGLE_API_KEY) {
-    debugLog("[FactMerger] Skipped — no GOOGLE_API_KEY configured");
+  // Guard: need LLM provider — factory throws if no API key
+  let llm;
+  try {
+    llm = getLLMProvider();
+  } catch {
+    debugLog("[FactMerger] Skipped — LLM provider unavailable (no API key configured)");
     return newContext;  // fallback: just use the new context as-is
   }
 
@@ -81,15 +83,7 @@ export async function consolidateFacts(
     return newContext;  // no changes needed
   }
 
-  // Initialize Gemini with the configured API key
-  const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
-
-  // Use gemini-2.5-flash for speed — merges should complete in ~2-3s
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-  });
-
-  // Build the merge prompt — instructs Gemini to resolve contradictions
+  // Build the merge prompt — instructs LLM to resolve contradictions
   // and deduplicate while keeping the NEW UPDATE as source of truth
   const prompt = "You are a memory consolidation engine for an AI agent.\n\n" +
     "OLD MEMORY:\n" + oldContext + "\n\n" +
@@ -103,11 +97,8 @@ export async function consolidateFacts(
     "5. Return ONLY the consolidated raw text. No markdown, no preamble, " +
     "no explanation — just the merged facts.";
 
-  // Call Gemini to perform the intelligent merge
-  const result = await model.generateContent(prompt);
-
-  // Extract and trim the merged text from Gemini's response
-  const mergedText = result.response.text().trim();
+  // Call LLM to perform the intelligent merge
+  const mergedText = (await llm.generateText(prompt)).trim();
 
   // Log the merge result for debugging (to stderr, not stdout)
   debugLog(

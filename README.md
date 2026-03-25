@@ -14,7 +14,7 @@
 
 ## Table of Contents
 
-- [What's New (v4.2.0)](#whats-new-in-v420--project-repo-registry-)
+- [What's New (v4.3.0)](#whats-new-in-v430--the-bridge-)
 - [Multi-Instance Support](#multi-instance-support)
 - [How Prism Compares](#how-prism-compares)
 - [Quick Start](#quick-start-zero-config--local-mode)
@@ -47,6 +47,7 @@
 > **🧠 Active Behavioral Memory & IDE Sync**
 > Prism doesn't just log what happened—it learns. When an agent is corrected, the memory gains "Importance". Once an insight graduates (Importance >= 7), Prism can automatically sync it directly to your `.cursorrules` or `.clauderules` file, turning dynamic behavioral learnings into permanent, zero-token IDE enforcement.
 
+<a name="whats-new-in-v420--project-repo-registry-"></a>
 <details>
 <summary><strong>What's in v4.2.0 — Project Repo Registry 🗂️</strong></summary>
 
@@ -58,6 +59,7 @@
 
 </details>
 
+<a name="whats-in-v410--auto-migration--multi-instance-"></a>
 <details>
 <summary><strong>What's in v4.1.0 — Auto-Migration & Multi-Instance 🔀</strong></summary>
 
@@ -69,6 +71,7 @@
 
 </details>
 
+<a name="whats-in-v400--behavioral-memory-"></a>
 <details>
 <summary><strong>What's in v4.0.0 — Behavioral Memory 🧠</strong></summary>
 
@@ -82,6 +85,7 @@
 
 </details>
 
+<a name="whats-in-v310--memory-lifecycle-"></a>
 <details>
 <summary><strong>What's in v3.1.0 — Memory Lifecycle 🔄</strong></summary>
 
@@ -107,6 +111,7 @@
 
 </details>
 
+<a name="whats-in-v300--agent-hivemind-"></a>
 <details>
 <summary><strong>What's in v3.0.0 — Agent Hivemind 🐝</strong></summary>
 
@@ -124,6 +129,16 @@
 
 
 <details>
+<summary><strong>What's in v2.5.1 — Version Sync & Embedding Safety</strong></summary>
+
+| Feature | Description |
+|---|---|
+| 🔄 **Dynamic Versioning** | Version derived from `package.json` — MCP handshake, dashboard, and npm stay in sync. |
+| 🛡️ **Embedding Validation** | Validates 768-dimension vectors at runtime to catch model regressions. |
+
+</details>
+
+<details>
 <summary><strong>What's in v2.5.0 — Enterprise Memory 🏗️</strong></summary>
 
 | Feature | Description |
@@ -132,16 +147,6 @@
 | 🛡️ **GDPR Deletion** | `session_forget_memory` with soft/hard delete and Article 17 justification. |
 | 🔗 **LangChain Integration** | `PrismMemoryRetriever` / `PrismKnowledgeRetriever` BaseRetriever adapters. |
 | 🧩 **LangGraph Agent** | 5-node research agent example with MCP bridge and hybrid search. |
-
-</details>
-
-<details>
-<summary><strong>What's in v2.5.1 — Version Sync & Embedding Safety</strong></summary>
-
-| Feature | Description |
-|---|---|
-| 🔄 **Dynamic Versioning** | Version derived from `package.json` — MCP handshake, dashboard, and npm stay in sync. |
-| 🛡️ **Embedding Validation** | Validates 768-dimension vectors at runtime to catch model regressions. |
 
 </details>
 
@@ -698,9 +703,9 @@ The tool and dashboard button both call the same repair logic — the dashboard 
 4. On `session_load_context`, high-importance corrections auto-surface as `[⚠️ BEHAVIORAL WARNINGS]`
 5. Agent sees warnings and avoids repeating past mistakes
 
-### v4.2 Knowledge Sync Rules — "The Bridge"
+### v4.3.0 Knowledge Sync Rules — "The Bridge"
 
-Bridges **v4.0 Behavioral Memory** (graduated insights) with **v4.2 Project Registry** (repo paths) to physically write agent learnings into your project's IDE rules file.
+Bridges **v4.0 Behavioral Memory** (graduated insights) with **v4.2.0 Project Registry** (repo paths) to physically write agent learnings into your project's IDE rules file.
 
 | Feature | Without Sync Rules | With `knowledge_sync_rules` |
 |---------|-------------------|----------------------------|

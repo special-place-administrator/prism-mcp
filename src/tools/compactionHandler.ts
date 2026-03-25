@@ -8,8 +8,8 @@
  */
 
 import { getStorage } from "../storage/index.js";
-import { GOOGLE_API_KEY, PRISM_USER_ID } from "../config.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { PRISM_USER_ID } from "../config.js";
+import { getLLMProvider } from "../utils/llm/factory.js";
 import { debugLog } from "../utils/logger.js";
 
 // ─── Constants ────────────────────────────────────────────────
@@ -30,15 +30,10 @@ export function isCompactLedgerArgs(
   return typeof args === "object" && args !== null;
 }
 
-// ─── Gemini Summarization ─────────────────────────────────────
+// ─── LLM Summarization ────────────────────────────────────────
 
 async function summarizeEntries(entries: any[]): Promise<string> {
-  if (!GOOGLE_API_KEY) {
-    throw new Error("Cannot compact ledger: GOOGLE_API_KEY required for Gemini summarization");
-  }
-
-  const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const llm = getLLMProvider(); // throws if no API key configured
 
   const entriesText = entries.map((e, i) =>
     `[${i + 1}] ${e.session_date || "unknown date"}: ${e.summary || "no summary"}\n` +
@@ -46,20 +41,17 @@ async function summarizeEntries(entries: any[]): Promise<string> {
     (e.files_changed?.length ? `  Files: ${e.files_changed.join(", ")}\n` : "")
   ).join("\n");
 
-  const prompt =
+  const prompt = (
     `You are compressing a session history log. Summarize these ${entries.length} ` +
     `work sessions into a single concise paragraph (max 500 words).\n\n` +
     `PRESERVE: key decisions, important file changes, error resolutions, ` +
     `architecture changes, and any recurring patterns.\n` +
     `OMIT: routine operations, intermediate debugging steps, and redundant details.\n\n` +
     `Sessions to summarize:\n${entriesText}\n\n` +
-    `Provide ONLY the summary paragraph, no headers or formatting.`;
+    `Provide ONLY the summary paragraph, no headers or formatting.`
+  ).substring(0, 30000);
 
-  const truncatedPrompt = prompt.substring(0, 30000);
-
-  const result = await model.generateContent(truncatedPrompt);
-  const response = result.response;
-  return response.text();
+  return llm.generateText(prompt);
 }
 
 // ─── Main Handler ─────────────────────────────────────────────

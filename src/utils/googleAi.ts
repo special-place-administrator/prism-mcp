@@ -1,6 +1,10 @@
 /**
  * Google Gemini AI Client
  *
+ * @deprecated v4.4 — All callers now use `getLLMProvider()` from `src/utils/llm/factory.ts`.
+ * `analyzePaperWithGemini` logic has been inlined into `handlers.ts`.
+ * This file is kept for reference and will be removed in v4.5.
+ *
  * This module integrates with Google's Gemini AI models for research
  * paper analysis. It uses the @google/generative-ai SDK (Google AI Studio).
  *

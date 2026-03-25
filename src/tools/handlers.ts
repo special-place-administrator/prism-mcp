@@ -21,7 +21,7 @@
  */
 
 import { performWebSearch, performWebSearchRaw, performLocalSearch, performLocalSearchRaw, performBraveAnswers } from "../utils/braveApi.js";
-import { analyzePaperWithGemini } from "../utils/googleAi.js";
+import { getLLMProvider } from "../utils/llm/factory.js";
 import { isBraveWebSearchArgs, isBraveLocalSearchArgs, isBraveAnswersArgs, isGeminiResearchPaperAnalysisArgs, isBraveWebSearchCodeModeArgs, isBraveLocalSearchCodeModeArgs, isCodeModeTransformArgs } from "./definitions.js";
 import { runInSandbox } from "../utils/executor.js";
 import { CODE_MODE_TEMPLATES, getTemplateNames } from "../templates/codeMode.js";
@@ -265,8 +265,33 @@ export async function researchPaperAnalysisHandler(args: unknown) {
   }
 
   try {
-    debugLog(`Analyzing research paper with Gemini (${analysisType} analysis)...`);
-    const analysis = await analyzePaperWithGemini(paperContent, analysisType, additionalContext);
+    debugLog(`Analyzing research paper (${analysisType} analysis)...`);
+
+    // Build the analysis prompt (mirrors the original analyzePaperWithGemini logic)
+    let prompt = `I need you to perform a detailed ${analysisType} analysis of the following research paper.\n\n`;
+    if (additionalContext) {
+      prompt += `Additional context: ${additionalContext}\n\n`;
+    }
+    prompt += `Research paper content:\n${paperContent}\n\n`;
+    switch (analysisType.toLowerCase()) {
+      case "summary":
+        prompt += "Provide a comprehensive summary including the research question, methodology, key findings, and conclusions.";
+        break;
+      case "critique":
+        prompt += "Provide a critical evaluation of the research methodology, validity of findings, limitations, and suggestions for improvement.";
+        break;
+      case "literature review":
+        prompt += "Analyze how this paper fits into the broader research landscape, identifying key related works and research gaps.";
+        break;
+      case "key findings":
+        prompt += "Extract and explain the most significant findings and their implications.";
+        break;
+      default:
+        prompt += "Perform a comprehensive analysis including summary, methodology assessment, key findings, limitations, and significance.";
+    }
+
+    const llm = getLLMProvider();
+    const analysis = await llm.generateText(prompt);
 
     return {
       content: [{ type: "text", text: analysis }],

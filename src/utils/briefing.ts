@@ -13,8 +13,7 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { GOOGLE_API_KEY } from "../config.js";
+import { getLLMProvider } from "./llm/factory.js";
 import { debugLog } from "./logger.js";
 
 export interface BriefingContext {
@@ -41,13 +40,12 @@ export async function generateMorningBriefing(
   context: BriefingContext,
   recentEntries: LedgerSummary[]
 ): Promise<string> {
-  if (!GOOGLE_API_KEY) {
-    return "☀️ Good morning! (Morning Briefing unavailable — no GOOGLE_API_KEY configured)";
+  let llm;
+  try {
+    llm = getLLMProvider();
+  } catch {
+    return "☀️ Good morning! (Morning Briefing unavailable — LLM provider not configured)";
   }
-
-  const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
-  // 2.5-flash for speed — briefings should take ≤3s
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const todosBlock = context.pendingTodos?.length
     ? `Pending TODOs:\n${context.pendingTodos.map(t => `  • ${t}`).join("\n")}`
@@ -80,13 +78,12 @@ Rules:
 - Each bullet starts with a relevant emoji.`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
+    const text = (await llm.generateText(prompt)).trim();
     debugLog(`[Morning Briefing] Generated for "${context.project}" (${text.length} chars)`);
     return text;
   } catch (error) {
     console.error(
-      `[Morning Briefing] Gemini call failed: ${error instanceof Error ? error.message : String(error)}`
+      `[Morning Briefing] LLM call failed: ${error instanceof Error ? error.message : String(error)}`
     );
     return "☀️ Good morning! Ready to continue — check your TODOs above to pick up where you left off.";
   }

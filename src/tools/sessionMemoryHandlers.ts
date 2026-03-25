@@ -19,7 +19,7 @@
 import { debugLog } from "../utils/logger.js";
 import { getStorage } from "../storage/index.js";
 import { toKeywordArray } from "../utils/keywordExtractor.js";
-import { generateEmbedding } from "../utils/embeddingApi.js";
+import { getLLMProvider } from "../utils/llm/factory.js";
 import { getCurrentGitState, getGitDrift } from "../utils/git.js";
 import { getSetting } from "../storage/configStorage.js";
 
@@ -130,7 +130,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
     const entryId = (savedEntry as any)?.id;
 
     if (entryId) {
-      generateEmbedding(embeddingText)
+      getLLMProvider().generateEmbedding(embeddingText)
         .then(async (embedding) => {
           await storage.patchLedger(entryId, {
             embedding: JSON.stringify(embedding),
@@ -974,7 +974,7 @@ export async function sessionSearchMemoryHandler(args: unknown) {
   // This is the most variable component: 50ms on a good day, 2000ms under load.
   const embeddingStart = performance.now();
   try {
-    queryEmbedding = await generateEmbedding(query);
+    queryEmbedding = await getLLMProvider().generateEmbedding(query);
   } catch (err) {
     return {
       content: [{
@@ -1185,7 +1185,7 @@ export async function backfillEmbeddingsHandler(args: unknown) {
         continue;
       }
 
-      const embedding = await generateEmbedding(textToEmbed);
+      const embedding = await getLLMProvider().generateEmbedding(textToEmbed);
 
       await storage.patchLedger(e.id, {
         embedding: JSON.stringify(embedding),
@@ -1920,7 +1920,7 @@ export async function sessionSaveExperienceHandler(args: unknown) {
     const entryId = (savedEntry as any)?.id;
 
     if (entryId) {
-      generateEmbedding(embeddingText)
+      getLLMProvider().generateEmbedding(embeddingText)
         .then(async (embedding) => {
           await storage.patchLedger(entryId, {
             embedding: JSON.stringify(embedding),

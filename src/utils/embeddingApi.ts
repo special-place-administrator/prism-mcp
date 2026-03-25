@@ -1,5 +1,11 @@
 /**
- * Embedding Generation Utility (v0.5.0 — Model Migration)
+ * Embedding Generation Utility
+ *
+ * @deprecated v4.4 — All callers now use `getLLMProvider().generateEmbedding()` from `src/utils/llm/factory.ts`.
+ * The embedding logic has been consolidated into `GeminiAdapter` in `src/utils/llm/adapters/gemini.ts`.
+ * This file is kept for reference and will be removed in v4.5.
+ *
+ * @deprecated Embedding Generation Utility (v0.5.0 — Model Migration)
  *
  * ═══════════════════════════════════════════════════════════════════
  * REVIEWER NOTE: This module wraps Google's gemini-embedding-001 model
