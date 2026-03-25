@@ -485,7 +485,11 @@ export class SupabaseStorage implements StorageBackend {
     }
 
     // Fix #5: Decay importance parity with SQLite.
-    // Run after the TTL sweep so stale high-importance entries also fade.
+    // NOTE: Unlike SQLite (which decays on every session_save_ledger health sweep),
+    // Supabase decay is TTL-gated — it only runs when knowledge_set_retention has
+    // been configured for this project. Projects without a TTL policy will not
+    // experience importance decay. Future improvement: fire this from
+    // sessionSaveLedgerHandler (fire-and-forget) to achieve full parity.
     try {
       await supabaseRpc("prism_decay_importance", {
         p_project: project,
