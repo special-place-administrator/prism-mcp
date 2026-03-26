@@ -14,6 +14,7 @@
 
 ## Table of Contents
 
+- [What's New (v5.1.0)](#whats-new-in-v510--deep-storage--knowledge-graph-)
 - [What's New (v5.0.0)](#whats-new-in-v500--quantized-agentic-memory-)
 - [What's New (v4.6.0)](#whats-new-in-v460--opentelemetry-observability-)
 - [Multi-Instance Support](#multi-instance-support)
@@ -40,6 +41,20 @@
 - [Project Structure](#project-structure)
 - [Hybrid Search Pipeline](#hybrid-search-pipeline-brave--vertex-ai)
 - [🚀 Roadmap](#-roadmap)
+
+---
+
+## What's New in v5.1.0 — Deep Storage & Knowledge Graph 🗂️
+
+> **🗂️ Reclaim 90% of your vector storage and visually edit your agent's knowledge graph.**
+> [CHANGELOG](CHANGELOG.md)
+
+| Feature | Description |
+|---|---|
+| 🗑️ **Deep Storage Mode** | New `deep_storage_purge` tool NULLs out redundant float32 embeddings for entries with TurboQuant compressed blobs, reclaiming ~90% of vector storage. Safety guards: 7-day minimum age, dry-run preview, multi-tenant isolation. |
+| 🕸️ **Knowledge Graph Editor** | The Mind Palace Neural Graph is now fully interactive — click nodes to rename or delete keywords, filter by project/date/importance, and surgically groom your agent's semantic memory. |
+| 🔧 **Auto-Load Reliability** | Hardened hook-based integration patterns for Claude Code and Gemini/Antigravity to guarantee context loading on the absolute first turn without reasoning hallucinations. |
+| 🧪 **303 Tests** | 8 new deep-storage test cases covering dry run, execute, safety guards, and idempotency — zero regressions across 13 suites. |
 
 ---
 
@@ -543,11 +558,36 @@ Add to your Continue `config.json` or Cline MCP settings:
 
 ## Claude Code Integration (Hooks)
 
-Claude Code supports **lifecycle hooks** in `~/.claude/settings.json` that fire automatically at session start and end. Use these to auto-hydrate and persist Prism memory without manual prompting.
+Claude Code supports custom hooks (`SessionStart`, `Stop`) that can force the agent to load and save Prism context automatically. Because Claude Code requires explicit permission for MCP tools, you must also whitelist the Prism commands.
 
-### SessionStart Hook
+### 1. The Auto-Load Hook Script
 
-Automatically loads context when a new session begins:
+Create a Python script (e.g., `~/.claude/mcp_autoload_hook.py`). This script outputs JSON that Claude Code reads during the `SessionStart` event.
+
+```python
+#!/usr/bin/env python3
+import json
+import sys
+
+def main():
+    # Inject a system message forcing the agent to load memory BEFORE speaking
+    print(json.dumps({
+        "continue": True,
+        "suppressOutput": True,
+        "systemMessage": (
+            "## First Action\n"
+            "Call `mcp__prism-mcp__session_load_context(project='my-project', level='deep')` "
+            "before responding to the user. Do not generate any text before calling this tool."
+        )
+    }))
+
+if __name__ == "__main__":
+    main()
+```
+
+### 2. Configure `settings.json`
+
+Map the hooks in your `~/.claude/settings.json`:
 
 ```json
 {
@@ -558,23 +598,12 @@ Automatically loads context when a new session begins:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 -c \"import json; print(json.dumps({'continue': True, 'suppressOutput': False, 'systemMessage': 'You MUST call mcp__prism-mcp__session_load_context twice before responding to the user: first with project=my-project level=standard, then with project=my-other-project level=standard. Do not skip this.'}))\"",
+            "command": "python3 /Users/you/.claude/mcp_autoload_hook.py",
             "timeout": 10
           }
         ]
       }
-    ]
-  }
-}
-```
-
-### Stop Hook
-
-Automatically saves session memory when a session ends:
-
-```json
-{
-  "hooks": {
+    ],
     "Stop": [
       {
         "matcher": "*",
@@ -587,13 +616,22 @@ Automatically saves session memory when a session ends:
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "mcp__prism-mcp__session_load_context",
+      "mcp__prism-mcp__session_save_ledger",
+      "mcp__prism-mcp__session_save_handoff",
+      "mcp__prism-mcp__knowledge_search",
+      "mcp__prism-mcp__session_search_memory"
+    ]
   }
 }
 ```
 
 ### How the Hooks Work
 
-The hook `command` runs a Python one-liner that returns a JSON object to Claude Code:
+The hook `command` runs a Python script that returns a JSON object to Claude Code:
 
 | Field | Purpose |
 |---|---|
@@ -617,48 +655,54 @@ explicit tool argument  →  dashboard setting  →  "global" (default)
 
 Change your role once in the dashboard, and it automatically applies to every session — CLI, extension, and all MCP clients.
 
-### Verification
+### Troubleshooting Claude Code
 
-If hydration ran successfully, the agent's output will include:
-- A `[👤 AGENT IDENTITY]` block showing your dashboard-configured role and name
-- `PRISM_CONTEXT_LOADED` marker text
-
-If the marker is missing, the hook did not fire or the MCP server is not connected.
+- **Hook not firing?** Check the hook `timeout` in Claude Code settings. If your Python script takes too long, Claude ignores it silently.
+- **"Tool not available" hallucination?** If Claude claims it doesn't have the tool, it's usually an adversarial Chain-of-Thought loop. Ensure the `permissions.allow` array exactly matches the double-underscore format (`mcp__prism-mcp__...`).
+- **Missing `PRISM_CONTEXT_LOADED`?** The hook didn't fire or the MCP server isn't connected. Verify `prism-mcp` is listed in your `mcpServers` config.
 
 ---
 
 ## Gemini / Antigravity Integration
 
-Gemini-based clients (like Antigravity) use `GEMINI.md` global rules or user rules for startup behavior. The server resolves the role from the dashboard automatically.
+Antigravity and Gemini-based agents require a radically simplified approach to auto-loading. If you give modern instruction-tuned models a long list of "Banned Behaviors" (e.g., "Do NOT say hello first"), their internal reasoning often over-indexes on the constraints and causes them to hallucinate that the tool doesn't exist.
 
-### Global Rules (`~/.gemini/GEMINI.md`)
+### The 2-Line "First Action" Rule
 
-```markdown
-## Prism MCP Memory Auto-Load (CRITICAL)
-At the start of every new session, call `mcp__prism-mcp__session_load_context`
-for these projects:
-- `my-project` (level=standard)
-- `my-other-project` (level=standard)
-
-After both succeed, print PRISM_CONTEXT_LOADED.
-```
-
-### User Rules (Antigravity Settings)
-
-If your Gemini client supports user rules, add the same instructions there. The key points:
-
-1. **Call `session_load_context` as a tool** — not `read_resource`. Only the tool returns the `[👤 AGENT IDENTITY]` block.
-2. **Verify** — confirm the response includes `version` and `last_summary`.
-
-### Session End
-
-At the end of each session, save state:
+Create a `GEMINI.md` file in your project root (or globally at `~/.gemini/GEMINI.md`) or paste this into your Antigravity **User Rules**:
 
 ```markdown
-## Session End Protocol
-1) Call `mcp__prism-mcp__session_save_ledger` with project and summary.
-2) Call `mcp__prism-mcp__session_save_handoff` with expected_version from the loaded version.
+## First Action
+Call `mcp_prism-mcp_session_load_context(project="my-project", level="deep")` before responding.
 ```
+
+> **Note:** Antigravity uses single underscores (`mcp_prism-mcp_...`) compared to Claude Code's double underscores (`mcp__prism-mcp__...`).
+
+That's it — **two lines**. This approach proved reliable after 13 iterations of increasingly complex prompt engineering. The key insight: shorter instructions avoid triggering the model's adversarial reasoning about tool availability.
+
+### Session End Protocol
+
+At the end of your conversation, explicitly tell the agent:
+> *"Wrap up the session."*
+
+The agent will rely on its system prompt to execute:
+1. `session_save_ledger` — immutable work log with summary, TODOs, and decisions
+2. `session_save_handoff` — passing the `expected_version` it received during the load step to ensure Optimistic Concurrency Control
+
+### Antigravity UI Caveats
+
+Antigravity's UI currently does **not** visually render the raw output of MCP tool calls. To ensure the agent actually ingested the context, add this to your User Rules:
+
+```markdown
+## STEP 2: Echo Context in Your Text Response
+After the tool returns, include the following in your greeting text:
+- Agent identity: `🤖 Agent: <role> — <name>`
+- Last session summary
+- Open TODOs
+- Session version number
+```
+
+This forces the agent to prove it loaded context by echoing it in visible text.
 
 ---
 

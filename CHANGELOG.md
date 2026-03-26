@@ -1,6 +1,15 @@
 # Changelog
 
-All notable changes to Prism MCP will be documented in this file.
+All notable changes to this project will be documented in this file.
+
+## [5.1.0] - 2026-03-27
+### Added
+- **Deep Storage Mode**: New `deep_storage_purge` tool to reclaim ~90% of vector storage by dropping float32 vectors for entries with TurboQuant compressed blobs.
+- **Knowledge Graph Editor**: Transformed the Mind Palace Neural Graph into an interactive editor with dynamic filtering, node renaming, and surgical keyword deletion.
+### Fixed
+- **Auto-Load Reliability**: Hardened auto-load prompt instructions and added hook scripts for Claude Code / Antigravity to ensure memory is loaded on the first turn (bypassing model CoT hallucinations).
+### Engineering
+- 303/303 automated tests passing across 13 suites.
 
 ## 🚀 v5.0.0 — The TurboQuant Update (2026-03-26)
 
