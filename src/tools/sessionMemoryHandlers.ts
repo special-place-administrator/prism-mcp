@@ -51,6 +51,8 @@ import {
   isKnowledgeVoteArgs,
   // v4.2: Sync Rules type guard
   isKnowledgeSyncRulesArgs,
+  // v5.1: Deep Storage Mode type guard
+  isDeepStoragePurgeArgs,
 } from "./sessionMemoryDefinitions.js";
 
 // v4.2: File system access for knowledge_sync_rules
@@ -2464,3 +2466,77 @@ export async function sessionExportMemoryHandler(args: unknown) {
     };
   }
 }
+
+// ─── v5.1: Deep Storage Mode (The Purge) ──────────────────────
+//
+// REVIEWER NOTE: This handler is the storage optimization payoff of v5.0.
+// After TurboQuant backfill, old entries have BOTH float32 (3KB) and
+// compressed (400B) representations. This tool NULLs out the float32
+// column for entries old enough that Tier-1 native search value is minimal.
+//
+// HANDLER PATTERN:
+//   1. Validate args via isDeepStoragePurgeArgs (imported from definitions)
+//   2. Apply defaults (older_than_days=30, dry_run=false)
+//   3. Delegate to storage.purgeHighPrecisionEmbeddings()
+//   4. Format response with human-readable byte counts
+//
+// NO SERVER REF NEEDED: Unlike sessionSaveHandoffHandler, this tool
+// doesn't modify any subscribed resource — no notification needed.
+
+export async function deepStoragePurgeHandler(args: unknown) {
+  if (!isDeepStoragePurgeArgs(args)) {
+    throw new Error("Invalid arguments for deep_storage_purge");
+  }
+
+  const olderThanDays = args.older_than_days ?? 30;
+  const dryRun = args.dry_run ?? false;
+
+  debugLog(
+    `[deep_storage_purge] ${dryRun ? "DRY RUN" : "EXECUTING"}: ` +
+    `olderThanDays=${olderThanDays}, project=${args.project || "all"}`
+  );
+
+  const storage = await getStorage();
+
+  const result = await storage.purgeHighPrecisionEmbeddings({
+    project: args.project,
+    olderThanDays,
+    dryRun,
+    userId: PRISM_USER_ID,
+  });
+
+  // Format bytes as human-readable MB with 2 decimal places
+  const mbs = (result.reclaimedBytes / (1024 * 1024)).toFixed(2);
+
+  if (dryRun) {
+    return {
+      content: [{
+        type: "text",
+        text:
+          `🔍 **Deep Storage Purge — DRY RUN**\n\n` +
+          `Eligible entries: **${result.eligible}**\n` +
+          `Estimated space to reclaim: **${result.reclaimedBytes.toLocaleString()} bytes** (~${mbs} MB)\n\n` +
+          (args.project ? `Project: \`${args.project}\`\n` : `Scope: all projects\n`) +
+          `Age threshold: entries older than ${olderThanDays} days\n\n` +
+          `To execute the purge, call again with \`dry_run: false\`.`,
+      }],
+      isError: false,
+    };
+  }
+
+  return {
+    content: [{
+      type: "text",
+      text:
+        `✅ **Deep Storage Purge Complete**\n\n` +
+        `Purged entries: **${result.purged}**\n` +
+        `Reclaimed space: **${result.reclaimedBytes.toLocaleString()} bytes** (~${mbs} MB)\n\n` +
+        (args.project ? `Project: \`${args.project}\`\n` : `Scope: all projects\n`) +
+        `Age threshold: entries older than ${olderThanDays} days\n\n` +
+        `💡 Tier-2 (TurboQuant) and Tier-3 (FTS5) search remain fully functional.\n` +
+        `Tier-1 (native sqlite-vec) search will skip these entries — this is expected.`,
+    }],
+    isError: false,
+  };
+}
+

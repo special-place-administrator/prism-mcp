@@ -102,15 +102,160 @@ export async function startDashboardServer(): Promise<void> {
     }
   };
 
+  /**
+   * v5.1: Optional HTTP Basic Auth for remote dashboard access.
+   *
+   * HOW IT WORKS:
+   *   1. If PRISM_DASHBOARD_USER and PRISM_DASHBOARD_PASS are NOT set → auth is disabled (backward compatible)
+   *   2. If set → every request must provide Basic Auth credentials OR a valid session cookie
+   *   3. On successful auth → a session cookie (24h) is set so users don't re-authenticate on every request
+   *   4. On failure → a styled login page is shown (not a raw 401 popup)
+   *
+   * SECURITY NOTES:
+   *   - This is HTTP Basic Auth — suitable for LAN/VPN access, NOT public internet without HTTPS
+   *   - Session tokens are random 64-char hex strings stored in-memory (cleared on server restart)
+   *   - Timing-safe comparison prevents credential timing attacks
+   */
+  const AUTH_USER = process.env.PRISM_DASHBOARD_USER || "";
+  const AUTH_PASS = process.env.PRISM_DASHBOARD_PASS || "";
+  const AUTH_ENABLED = AUTH_USER.length > 0 && AUTH_PASS.length > 0;
+  const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+  const activeSessions = new Map<string, number>(); // token → expiry timestamp
+
+  /** Generate a random session token */
+  function generateToken(): string {
+    const chars = "abcdef0123456789";
+    let token = "";
+    for (let i = 0; i < 64; i++) {
+      token += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return token;
+  }
+
+  /** Timing-safe string comparison to prevent timing attacks */
+  function safeCompare(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    let result = 0;
+    for (let i = 0; i < a.length; i++) {
+      result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return result === 0;
+  }
+
+  /** Check if request is authenticated (returns true if auth is disabled) */
+  function isAuthenticated(req: http.IncomingMessage): boolean {
+    if (!AUTH_ENABLED) return true;
+
+    // Check session cookie first
+    const cookies = req.headers.cookie || "";
+    const match = cookies.match(/prism_session=([a-f0-9]{64})/);
+    if (match) {
+      const token = match[1];
+      const expiry = activeSessions.get(token);
+      if (expiry && expiry > Date.now()) return true;
+      // Expired — clean up
+      if (expiry) activeSessions.delete(token);
+    }
+
+    // Check Basic Auth header
+    const authHeader = req.headers.authorization || "";
+    if (authHeader.startsWith("Basic ")) {
+      const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
+      const [user, pass] = decoded.split(":");
+      return safeCompare(user || "", AUTH_USER) && safeCompare(pass || "", AUTH_PASS);
+    }
+
+    return false;
+  }
+
+  /** Render a styled login page matching the Mind Palace theme */
+  function renderLoginPage(): string {
+    return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Prism MCP — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e1a;color:#f1f5f9;font-family:'Inter',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.bg{position:fixed;inset:0;background-image:radial-gradient(circle at 20% 30%,rgba(139,92,246,0.08) 0%,transparent 50%),radial-gradient(circle at 80% 70%,rgba(59,130,246,0.06) 0%,transparent 50%)}
+.login-card{position:relative;z-index:1;background:rgba(17,24,39,0.6);backdrop-filter:blur(16px);border:1px solid rgba(139,92,246,0.15);border-radius:16px;padding:2.5rem;width:380px;max-width:90vw;text-align:center}
+.logo{font-size:1.75rem;font-weight:700;background:linear-gradient(135deg,#8b5cf6,#3b82f6,#06b6d4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:0.5rem}
+.subtitle{color:#64748b;font-size:0.85rem;margin-bottom:2rem}
+.field{margin-bottom:1rem}
+.field input{width:100%;padding:0.7rem 1rem;background:#111827;border:1px solid rgba(139,92,246,0.15);border-radius:10px;color:#f1f5f9;font-size:0.9rem;font-family:'Inter',sans-serif;outline:none;transition:border-color 0.2s}
+.field input:focus{border-color:rgba(139,92,246,0.5)}
+.field input::placeholder{color:#475569}
+.login-btn{width:100%;padding:0.75rem;background:linear-gradient(135deg,#8b5cf6,#3b82f6);color:white;border:none;border-radius:10px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:opacity 0.2s;margin-top:0.5rem}
+.login-btn:hover{opacity:0.9}
+.error{color:#f43f5e;font-size:0.8rem;margin-top:1rem;display:none}
+.lock{font-size:2rem;margin-bottom:1rem}
+</style></head><body>
+<div class="bg"></div>
+<div class="login-card">
+<div class="lock">🔒</div>
+<div class="logo">🧠 Prism Mind Palace</div>
+<div class="subtitle">Authentication required for remote access</div>
+<form id="loginForm" onsubmit="return handleLogin(event)">
+<div class="field"><input type="text" id="user" placeholder="Username" autocomplete="username" required></div>
+<div class="field"><input type="password" id="pass" placeholder="Password" autocomplete="current-password" required></div>
+<button type="submit" class="login-btn">Sign In</button>
+</form>
+<div class="error" id="error">Invalid credentials</div>
+</div>
+<script>
+async function handleLogin(e){e.preventDefault();
+var u=document.getElementById('user').value,p=document.getElementById('pass').value;
+var r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:u,pass:p})});
+if(r.ok){window.location.reload();}else{document.getElementById('error').style.display='block';}
+return false;}
+</script></body></html>`;
+  }
+
+  if (AUTH_ENABLED) {
+    console.error(`[Dashboard] 🔒 Auth enabled for user "${AUTH_USER}"`);
+  }
+
   const httpServer = http.createServer(async (req, res) => {
     // CORS headers for local dev
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       return res.end();
+    }
+
+    // ─── v5.1: Auth login endpoint (always accessible) ───
+    const reqUrl = new URL(req.url || "/", `http://${req.headers.host}`);
+    if (AUTH_ENABLED && reqUrl.pathname === "/api/auth/login" && req.method === "POST") {
+      const body = await readBody(req);
+      try {
+        const { user, pass } = JSON.parse(body);
+        if (safeCompare(user || "", AUTH_USER) && safeCompare(pass || "", AUTH_PASS)) {
+          const token = generateToken();
+          activeSessions.set(token, Date.now() + SESSION_TTL_MS);
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Set-Cookie": `prism_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_MS / 1000}`,
+          });
+          return res.end(JSON.stringify({ ok: true }));
+        }
+      } catch { /* fall through to 401 */ }
+      res.writeHead(401, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "Invalid credentials" }));
+    }
+
+    // ─── v5.1: Auth gate — block unauthenticated requests ───
+    if (AUTH_ENABLED && !isAuthenticated(req)) {
+      // For API calls, return 401 JSON
+      if (reqUrl.pathname.startsWith("/api/")) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: "Authentication required" }));
+      }
+      // For page requests, show login page
+      res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end(renderLoginPage());
     }
 
     try {
@@ -260,17 +405,41 @@ export async function startDashboardServer(): Promise<void> {
         return res.end(JSON.stringify({ ok: true, role }));
       }
 
-      // ─── API: Knowledge Graph Data (v2.3.0) ───
-      if (url.pathname === "/api/graph") {
+      // ─── API: Knowledge Graph Data (v2.3.0 / v5.1) ───
+      if (url.pathname === "/api/graph" && req.method === "GET") {
+        const project = url.searchParams.get("project") || undefined;
+        const days = url.searchParams.get("days") || undefined;
+        const min_importance = url.searchParams.get("min_importance") || undefined;
+
         // Fetch recent ledger entries to build the graph
         // We look at the last 100 entries to keep the graph relevant but performant
         const s = await getStorageSafe();
         if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
-        const entries = await s.getLedgerEntries({
-          limit: "100",
+
+        const params: any = {
           order: "created_at.desc",
-          select: "project,keywords",
-        });
+          select: "project,keywords,created_at,importance",
+        };
+
+        if (!project && !days && !min_importance) {
+          params.limit = "100";
+        } else {
+          params.limit = "500"; // Bump limit when exploring specific filters
+        }
+
+        if (project) {
+          params.project = `eq.${project}`;
+        }
+        if (days) {
+          const past = new Date();
+          past.setDate(past.getDate() - parseInt(days, 10));
+          params.created_at = `gte.${past.toISOString()}`;
+        }
+        if (min_importance) {
+          params.importance = `gte.${parseInt(min_importance, 10)}`;
+        }
+
+        const entries = await s.getLedgerEntries(params);
 
         // Deduplication sets for nodes and edges
         const nodes: { id: string; label: string; group: string }[] = [];
@@ -328,6 +497,80 @@ export async function startDashboardServer(): Promise<void> {
 
         res.writeHead(200, { "Content-Type": "application/json" });
         return res.end(JSON.stringify({ nodes, edges }));
+      }
+
+      // ─── API: Edit Knowledge Graph Node (v5.1) ───
+      // Surgically patches keywords in the session_ledger.
+      // Supports two operations:
+      //   1. RENAME: old keyword → new keyword across all entries
+      //   2. DELETE: remove a keyword from all entries (newId = null)
+      //
+      // HOW IT WORKS:
+      //   - Reconstructs the full PostgREST-style keyword (e.g. cat:debugging)
+      //   - Uses LIKE-based search to find candidate entries
+      //   - Validates exact array membership in JS (prevents substring matches)
+      //   - Idempotently strips or replaces the keyword via patchLedger()
+      //
+      // SECURITY: Protected by the v5.1 Dashboard Auth gate above.
+      if (url.pathname === "/api/graph/node" && req.method === "POST") {
+        try {
+          const body = await readBody(req);
+          const { oldId, newId, group } = JSON.parse(body || "{}");
+
+          if (!oldId || !group || (group !== "keyword" && group !== "category")) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: "Invalid request" }));
+          }
+
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage not ready" })); }
+
+          // 1. Reconstruct the full string as stored in DB
+          //    Categories are prefixed with "cat:" (e.g. cat:debugging)
+          //    Keywords are stored as bare strings (e.g. authentication)
+          const searchKw = group === "category" ? `cat:${oldId}` : oldId;
+          const newKw = newId ? (group === "category" ? `cat:${newId}` : newId) : null;
+
+          // 2. Fetch all entries containing the old keyword (LIKE search)
+          //    Note: LIKE '%auth%' would also match 'authentication',
+          //    so we verify exact array membership in the JS loop below.
+          const entries = await s.getLedgerEntries({
+            keywords: `cs.{${searchKw}}`,
+            select: "id,keywords",
+          }) as Array<{ id: string; keywords: unknown }>;
+
+          let updated = 0;
+          for (const entry of entries) {
+            // Parse keywords — handle both SQLite (JSON string) and Supabase (array)
+            let kws: string[] = [];
+            if (Array.isArray(entry.keywords)) kws = entry.keywords as string[];
+            else if (typeof entry.keywords === "string") {
+              try { kws = JSON.parse(entry.keywords); } catch { continue; }
+            }
+
+            // Exact match check — guards against substring false positives
+            if (!kws.includes(searchKw)) continue;
+
+            // Remove the old keyword
+            const newKws = kws.filter(k => k !== searchKw);
+
+            // If renaming (not deleting), add the new keyword (no duplicates)
+            if (newKw && !newKws.includes(newKw)) {
+              newKws.push(newKw);
+            }
+
+            // 3. Patch the entry — patchLedger handles JSON serialization
+            await s.patchLedger(entry.id, { keywords: newKws });
+            updated++;
+          }
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: true, updated }));
+        } catch (err) {
+          console.error("[Dashboard] Node edit error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Edit failed" }));
+        }
       }
 
       // ─── API: Hivemind Team Roster (v3.0) ───

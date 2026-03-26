@@ -6,7 +6,28 @@
 
 ## 🏆 Shipped — The v4.x Lineage
 
-Prism has evolved from a simple SQLite session logger into a **Multimodal, Multi-Agent, Self-Learning, Observable AI Operating System**.
+Prism has evolved from a simple SQLite session logger into a **Quantized, Multimodal, Multi-Agent, Self-Learning, Observable AI Operating System**.
+
+### ✅ v5.1.0 — Knowledge Graph Editor & Deep Storage
+
+| Feature | Detail |
+|---------|--------|
+| 🗑️ **Deep Storage Mode** | `prism_purge_embeddings` reclaims ~90% of vector storage by purging float32 vectors for entries with TurboQuant blobs. |
+| 🕸️ **Knowledge Graph Editor** | Graph filtering (project, date range, importance) and interactive node editor panel to surgically rename/delete keywords. |
+
+---
+
+### ✅ v5.0.0 — Quantized Agentic Memory
+
+| Feature | Detail |
+|---------|--------|
+| 🧮 **TurboQuant Math Core** | Pure TypeScript port of Google's TurboQuant (ICLR 2026) — Lloyd-Max codebook, QR rotation, QJL error correction. Zero dependencies. |
+| 📦 **~7× Embedding Compression** | 768-dim embeddings shrink from 3,072 bytes to ~400 bytes (4-bit) via variable bit-packing. |
+| 🔍 **Asymmetric Similarity** | Unbiased inner product estimator: query as float32 vs compressed blobs. No decompression needed. |
+| 🗄️ **Three-Tier Search** | FTS5 → sqlite-vec float32 → TurboQuant JS fallback. Search works even without native vector extension. |
+| 🛠️ **Backfill Handler** | `session_backfill_embeddings` repairs AND compresses existing entries in a single atomic update. |
+
+---
 
 ### ✅ v4.6.0 — OpenTelemetry Observability
 
@@ -95,18 +116,12 @@ v3.0: Role-scoped memory, agent registration/heartbeat, Telepathy (real-time cro
 ### Priority 1 — Documentation & Architecture Guide 📚
 *(Recommended next session)*
 
-The feature set is exceptional but the README reflects v4.3. Needed:
-- Architecture diagram (VLM pipeline, OTel waterfall, Hivemind sync, IDE bridge)
+Needed:
 - "How to build a self-improving agent with Prism" canonical guide
-- v4.x feature matrix table
-- Updated Quick Start reflecting all providers
+- Updated architecture diagrams (VLM pipeline, OTel waterfall, TurboQuant tiers)
+- Quick Start video/walkthrough
 
-### Priority 2 — Knowledge Graph Editor 🕸️
 
-Visual graph in Mind Palace Dashboard showing connected nodes:
-- Projects ↔ Sessions ↔ Ledger entries ↔ Graduated rules ↔ Agent roles
-- Click a node to preview content
-- Filter by project, date range, importance threshold
 
 ### Priority 3 — Autonomous Web Scholar 🌐
 

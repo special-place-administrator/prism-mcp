@@ -163,6 +163,9 @@ import {
   // v4.2: Knowledge Sync Rules
   KNOWLEDGE_SYNC_RULES_TOOL,
   knowledgeSyncRulesHandler,
+  // v5.1: Deep Storage Mode
+  DEEP_STORAGE_PURGE_TOOL,
+  deepStoragePurgeHandler,
   // ─── v3.0: Agent Hivemind tools ───
   AGENT_REGISTRY_TOOLS,
   agentRegisterHandler,
@@ -237,6 +240,8 @@ function buildSessionMemoryTools(autoloadList: string[]): Tool[] {
     KNOWLEDGE_DOWNVOTE_TOOL,       // knowledge_downvote — decrease entry importance
     // ─── v4.2: Knowledge Sync Rules tool ───
     KNOWLEDGE_SYNC_RULES_TOOL,     // knowledge_sync_rules — sync graduated insights to IDE rules files
+    // ─── v5.1: Deep Storage Mode tool ───
+    DEEP_STORAGE_PURGE_TOOL,       // deep_storage_purge — purge float32 embeddings for compressed entries
     // ─── Phase 2: GDPR Export tool ───
     SESSION_EXPORT_MEMORY_TOOL,    // session_export_memory — full portability export (Article 20)
   ];
@@ -810,6 +815,12 @@ export function createServer() {
           case "knowledge_sync_rules":
             if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
             result = await knowledgeSyncRulesHandler(args); break;
+
+          // ─── v5.1: Deep Storage Mode (The Purge) ───
+
+          case "deep_storage_purge":
+            if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
+            result = await deepStoragePurgeHandler(args); break;
 
           // ─── v3.0: Agent Hivemind Tools ───
 

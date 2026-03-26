@@ -1,3 +1,2145 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: docs/ARCHITECTURE.md, docs/self-improving-agent.md, src/dashboard/server.ts, src/dashboard/ui.ts, examples/langgraph-ts/README.md, examples/langgraph-ts/prism-client.ts, examples/langgraph-ts/retriever.ts, examples/langgraph-ts/agent.ts
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+docs/
+  ARCHITECTURE.md
+  self-improving-agent.md
+examples/
+  langgraph-ts/
+    agent.ts
+    prism-client.ts
+    README.md
+    retriever.ts
+src/
+  dashboard/
+    server.ts
+    ui.ts
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="docs/ARCHITECTURE.md">
+# Prism MCP v5 Architecture: Scaling Agentic Memory
+
+> **From 3KB per memory to 400 bytes — without losing a single thought.**
+>
+> This document explains how Prism MCP solves the agentic memory scaling problem using Google's TurboQuant compression (ICLR 2026), a Three-Tier search fallback system, and automated deep storage purging — all running locally in pure TypeScript with zero cloud dependencies.
+
+---
+
+## Table of Contents
+
+- [1. The Agentic Memory Problem](#1-the-agentic-memory-problem)
+- [2. System Architecture Overview](#2-system-architecture-overview)
+- [3. v5.0: TurboQuant Compression](#3-v50-turboquant-compression)
+- [4. The Three-Tier Search System](#4-the-three-tier-search-system)
+- [5. v5.1: Deep Storage Mode ("The Purge")](#5-v51-deep-storage-mode-the-purge)
+- [6. Memory Lifecycle](#6-memory-lifecycle)
+- [7. Data Integrity & Safety](#7-data-integrity--safety)
+- [8. Storage Backend Architecture](#8-storage-backend-architecture)
+- [9. Performance Benchmarks](#9-performance-benchmarks)
+- [10. Future Directions](#10-future-directions)
+
+---
+
+## 1. The Agentic Memory Problem
+
+### The Float32 Bloat
+
+Every AI agent session generates embeddings — 768-dimensional float32 vectors that capture the semantic meaning of each interaction. These vectors enable similarity search across sessions ("what did I work on that was similar to this?").
+
+The problem: **each vector costs 3,072 bytes** (768 dimensions × 4 bytes per float32).
+
+| Usage Pattern | Sessions/Day | Vectors/Year | Storage/Year |
+|---------------|-------------|-------------|-------------|
+| Solo developer | 10 | 3,650 | **11 MB** |
+| Small team (5 agents) | 50 | 18,250 | **56 MB** |
+| Enterprise (50 agents) | 500 | 182,500 | **560 MB** |
+| Power user (3yr history) | 10 | 10,950 | **34 MB** |
+
+For a local-first tool running on a developer's laptop, multi-hundred-megabyte vector databases are unacceptable. Cloud-hosted vector DBs solve this with server-side compression, but that violates Prism's core promise: **zero cloud dependencies**.
+
+### The Dilemma: Speed vs. Storage vs. Accuracy
+
+| Approach | Storage | Search Speed | Accuracy |
+|----------|---------|-------------|----------|
+| Full float32 (baseline) | 3,072 B/vec | ⚡ Native index | 100% |
+| Truncate to float16 | 1,536 B/vec | ⚡ Native index | ~99% |
+| PQ (Product Quantization) | ~96 B/vec | ⚡ Specialized index | ~90% |
+| **TurboQuant (Prism v5.0)** | **~400 B/vec** | **⚡ Asymmetric JS** | **>95%** |
+
+TurboQuant achieves a unique position: **high compression with high accuracy**, without requiring specialized index structures. The secret is *asymmetric search*.
+
+---
+
+## 2. System Architecture Overview
+
+```mermaid
+graph TB
+    Client["AI Client<br/>(Claude / Cursor / Windsurf)"]
+    LangChain["LangChain / LangGraph<br/>(Python/TS Retrievers)"]
+    MCP["Prism MCP Server<br/>(TypeScript)"]
+
+    Client -- "MCP Protocol (stdio)" --> MCP
+    LangChain -- "JSON-RPC via MCP Bridge" --> MCP
+
+    subgraph Core["Core Engine"]
+        Tools["Tool Handlers<br/>25+ MCP Tools"]
+        Memory["Memory Engine<br/>Behavioral + Visual"]
+        Quant["TurboQuant<br/>v5.0 Compression"]
+        Purge["Deep Storage<br/>v5.1 Purge"]
+    end
+
+    subgraph Integrations["External Integrations"]
+        Tracing["OTel Tracing<br/>v4.6"]
+        Dashboard["Mind Palace<br/>Dashboard"]
+        LLM["LLM Factory<br/>Gemini/OpenAI/Ollama"]
+    end
+
+    MCP --> Core
+    MCP --> Integrations
+
+    subgraph Storage["Dual Storage Backend"]
+        SQLite["SQLite (Local)<br/>libSQL + sqlite-vec"]
+        Supabase["Supabase (Cloud)<br/>PostgreSQL + pgvector"]
+    end
+
+    Core --> Storage
+
+    subgraph Tables["Database Schema"]
+        Ledger["session_ledger<br/>embedding + embedding_compressed"]
+        Handoffs["session_handoffs<br/>OCC versioning"]
+        History["history_snapshots<br/>Time Travel"]
+    end
+
+    Storage --> Tables
+
+    style Client fill:#4A90D9,color:#fff
+    style LangChain fill:#1C3D5A,color:#fff
+    style MCP fill:#2D3748,color:#fff
+    style Core fill:#1a1a2e,color:#fff
+    style Integrations fill:#16213e,color:#fff
+    style Storage fill:#0f3460,color:#fff
+    style Tables fill:#533483,color:#fff
+    style Quant fill:#E8B004,color:#000
+    style Purge fill:#E53E3E,color:#fff
+```
+
+---
+
+## 3. v5.0: TurboQuant Compression
+
+### How We Achieved ~7× Compression
+
+TurboQuant is a two-stage vector quantization algorithm. Prism implements it in **pure TypeScript** with zero external dependencies (`src/utils/turboquant.ts`, 840 lines).
+
+### Stage 1: Random QR Rotation + Lloyd-Max Quantization
+
+**The Problem**: Raw embedding coordinates have non-uniform distributions. Some dimensions carry more information than others. Scalar quantization (rounding each number independently) works poorly on non-uniform data.
+
+**The Solution**: Multiply the vector by a random orthogonal matrix (QR decomposition). This "scrambles" the coordinates so they become **identically distributed** — specifically, each coordinate follows N(0, 1/d) by the Central Limit Theorem.
+
+```
+Original vector:  [0.234, -0.891, 0.002, 0.567, ...]   ← non-uniform
+                            ↓ QR Rotation
+Rotated vector:   [0.041, -0.038, 0.042, -0.039, ...]   ← ~N(0, 1/768)
+                            ↓ Lloyd-Max Quantization
+MSE indices:      [5, 2, 5, 3, ...]                      ← 3-bit codes
+```
+
+**Lloyd-Max** finds the optimal codebook (set of reconstruction values) that minimizes mean squared error for a given distribution. For 3-bit quantization, it creates 8 optimal buckets for N(0, 1/768).
+
+### Stage 2: QJL Residual Correction
+
+Even after optimal quantization, there's a residual error. TurboQuant corrects this using **Quantized Johnson-Lindenstrauss** (QJL):
+
+```
+residual = original_rotated - MSE_reconstruction
+                    ↓ Random Gaussian Projection
+projected = G × residual    (768 random projections)
+                    ↓ Sign Quantization
+sign_bits = [1, 0, 1, 1, 0, ...]   (1 bit each = 96 bytes)
+```
+
+These sign bits provide an **unbiased estimator** for the inner product correction during search. This is the mathematical innovation from the ICLR 2026 paper.
+
+### Compression Budget (d=768, 4-bit)
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ Component        │ Size (bytes) │ Notes                  │
+├──────────────────┼──────────────┼────────────────────────┤
+│ Header           │     16       │ d, bits, radius, norm  │
+│ MSE Indices      │    288       │ 768 × 3 bits = 2304b   │
+│ QJL Sign Bits    │     96       │ 768 × 1 bit  = 768b    │
+├──────────────────┼──────────────┼────────────────────────┤
+│ TOTAL            │    400       │ vs 3,072 float32       │
+│ Compression      │    7.7×      │                        │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Asymmetric Search: The Secret Sauce
+
+The key insight: **the query vector stays as full float32**. Only the stored vectors are compressed.
+
+```typescript
+// Traditional symmetric search (both compressed — lossy):
+similarity(compress(query), compress(stored))  // ← accuracy loss on BOTH sides
+
+// Prism's asymmetric search (only stored is compressed):
+asymmetricCosineSimilarity(query_float32, compressed_blob)  // ← loss only on ONE side
+```
+
+This asymmetry is critical. When only one side is compressed, the QJL correction bits provide an **unbiased estimator** of the true inner product. The mathematical proof (Lemma 3.2 in the paper) shows:
+
+```
+E[estimated_similarity] = true_similarity
+```
+
+The estimator has some variance, but no systematic bias — meaning averaged over many queries, the ranking is preserved.
+
+---
+
+## 4. The Three-Tier Search System
+
+```mermaid
+graph TD
+    Query["Search Query<br/>'authentication flow'"]
+
+    Query --> FTS["Tier 0: FTS5 Keyword Search<br/>knowledge_search()"]
+    Query --> T1["Tier 1: Native Vector Search<br/>sqlite-vec / pgvector"]
+
+    T1 -->|"Results found"| Return1["Return ranked results"]
+    T1 -->|"No results / index missing"| T2
+
+    T2["Tier 2: TurboQuant JS Search<br/>asymmetricCosineSimilarity()"]
+    T2 -->|"Results found"| Return2["Return ranked results"]
+    T2 -->|"No compressed blobs"| Empty["Return empty []"]
+
+    FTS --> ReturnFTS["Return keyword matches"]
+
+    style Query fill:#4A90D9,color:#fff
+    style FTS fill:#38B2AC,color:#fff
+    style T1 fill:#48BB78,color:#fff
+    style T2 fill:#E8B004,color:#000
+    style Return1 fill:#48BB78,color:#fff
+    style Return2 fill:#E8B004,color:#000
+    style ReturnFTS fill:#38B2AC,color:#fff
+    style Empty fill:#E53E3E,color:#fff
+```
+
+### How `searchMemory()` Works
+
+```typescript
+// In src/storage/sqlite.ts — searchMemory()
+
+// 1. Generate float32 embedding for the query
+const queryEmbedding = await generateEmbedding(query);
+
+// 2. Tier 1: Try native sqlite-vec search
+try {
+  const results = await this.db.execute({
+    sql: `SELECT * FROM session_ledger
+          WHERE rowid IN (
+            SELECT rowid FROM vec_session_embeddings
+            WHERE embedding MATCH ?
+            ORDER BY distance LIMIT ?
+          )`,
+    args: [queryEmbedding, limit]
+  });
+  if (results.rows.length > 0) return results.rows;
+} catch {
+  // sqlite-vec index may not exist or be empty — fall through
+}
+
+// 3. Tier 2: TurboQuant JS fallback
+const candidates = await this.db.execute({
+  sql: `SELECT * FROM session_ledger
+        WHERE embedding_compressed IS NOT NULL
+          AND deleted_at IS NULL
+          AND user_id = ?`,
+  args: [userId]
+});
+
+// Score each candidate using asymmetric similarity
+const scored = candidates.rows.map(row => ({
+  ...row,
+  score: asymmetricCosineSimilarity(queryEmbedding, row.embedding_compressed)
+}));
+
+return scored.sort((a, b) => b.score - a.score).slice(0, limit);
+```
+
+### When Each Tier Is Used
+
+| Tier | Triggered When | Speed | Accuracy | Storage Cost |
+|------|---------------|-------|----------|-------------|
+| **0 (FTS5)** | `knowledge_search()` call | ⚡⚡⚡ | Keyword match only | ~0 (text index) |
+| **1 (Native)** | `session_search_memory()` — vectors exist | ⚡⚡ | 100% | 3,072 B/vec |
+| **2 (JS)** | Tier 1 fails or vectors purged | ⚡ | >95% | 400 B/vec |
+
+**After v5.1 Deep Storage purge**, old entries lose Tier 1 capability but retain Tier 2 — maintaining search with 90% less disk space.
+
+---
+
+## 5. v5.1: Deep Storage Mode ("The Purge")
+
+### The Dual-Storage Strategy
+
+During normal operation, every embedding is stored **twice**:
+
+```
+session_ledger row:
+├── embedding:            float32[768]    → 3,072 bytes (Tier 1)
+├── embedding_compressed: base64 blob     →   400 bytes (Tier 2)
+├── embedding_format:     "turbo4"
+└── embedding_turbo_radius: 12.847
+```
+
+This redundancy is intentional: Tier 1 is faster for recent searches, while Tier 2 exists as the long-term fallback.
+
+### The 7-Day Safety Window
+
+```mermaid
+timeline
+    title Memory Lifecycle
+    section Hot Zone (< 7 days)
+        Day 0-7 : Both Tier 1 + Tier 2 active
+                : Native vector search (fastest)
+                : Protected from purge
+    section Warm Zone (7-30 days)
+        Day 7-30 : Both tiers still active
+                 : Eligible for purge (user choice)
+                 : deep_storage_purge with older_than_days=7
+    section Cold Zone (> 30 days)
+        Day 30+ : Default purge target
+                : Tier 1 NULLed → Tier 2 only
+                : ~90% storage reclaimed
+```
+
+### The Purge SQL
+
+```sql
+-- What deep_storage_purge executes (simplified)
+UPDATE session_ledger
+SET embedding = NULL
+WHERE embedding IS NOT NULL              -- has a float32 to purge
+  AND embedding_compressed IS NOT NULL    -- CRITICAL: has Tier 2 fallback
+  AND deleted_at IS NULL                  -- skip tombstoned entries
+  AND created_at < datetime('now', '-30 days')
+  AND user_id = ?;                        -- multi-tenant guard
+```
+
+### Storage Impact
+
+```
+Before purge (1,000 entries):
+  Tier 1: 1,000 × 3,072 = 3,072,000 bytes (3.0 MB)
+  Tier 2: 1,000 ×   400 =   400,000 bytes (0.4 MB)
+  TOTAL:                    3,472,000 bytes (3.4 MB)
+
+After purge (entries > 30 days):
+  Tier 1: 100 × 3,072 =     307,200 bytes (recent only)
+  Tier 2: 1,000 × 400 =     400,000 bytes (all entries)
+  TOTAL:                     707,200 bytes (0.7 MB)
+
+  RECLAIMED: 2.7 MB (79% reduction)
+```
+
+For long-running deployments with years of history, the reclamation approaches **~90%**.
+
+---
+
+## 6. Memory Lifecycle
+
+```mermaid
+graph LR
+    Save["session_save_ledger()"]
+    Embed["Generate float32<br/>embedding (LLM)"]
+    Compress["TurboQuant<br/>compress to 400B"]
+    Store["Store BOTH in<br/>session_ledger"]
+    Search["session_search_memory()"]
+    Purge["deep_storage_purge()"]
+    Compact["session_compact_ledger()"]
+    Export["session_export_memory()"]
+    Delete["session_forget_memory()"]
+
+    Save --> Embed --> Compress --> Store
+    Store --> Search
+    Store --> Purge
+    Store --> Compact
+    Store --> Export
+    Store --> Delete
+
+    Purge -->|"NULL embedding"| ColdStore["Cold Storage<br/>(Tier 2 only)"]
+    Compact -->|"Summarize old entries"| Rollup["Rollup Entry"]
+    Delete -->|"Soft/Hard delete"| Tombstone["Tombstoned"]
+
+    style Save fill:#4A90D9,color:#fff
+    style Compress fill:#E8B004,color:#000
+    style Purge fill:#E53E3E,color:#fff
+    style Search fill:#48BB78,color:#fff
+    style ColdStore fill:#805AD5,color:#fff
+```
+
+### The Complete Flow
+
+1. **Save**: Agent calls `session_save_ledger()` with a session summary
+2. **Embed**: LLM factory generates a 768-dim float32 embedding (async, non-blocking)
+3. **Compress**: TurboQuant compresses to ~400-byte blob (< 1ms)
+4. **Store**: Both tiers written atomically to `session_ledger`
+5. **Search**: `session_search_memory()` queries both tiers with automatic fallback
+6. **Purge**: After 30+ days, `deep_storage_purge()` reclaims Tier 1 storage
+7. **Compact**: `session_compact_ledger()` summarizes old entries via Gemini
+
+---
+
+## 7. Data Integrity & Safety
+
+### Multi-Layered Protection
+
+| Guard | Where Enforced | Purpose |
+|-------|---------------|---------|
+| `olderThanDays >= 7` | SQLite layer + Supabase RPC | Protect active sessions from purge |
+| `embedding_compressed IS NOT NULL` | SQL WHERE clause | Never destroy the last searchable copy |
+| `deleted_at IS NULL` | SQL WHERE clause | Skip already-tombstoned entries |
+| `user_id = ?` | All queries | Multi-tenant isolation |
+| `dry_run: true` | Tool handler | Preview impact before executing |
+| OCC `expected_version` | `saveHandoff()` | Prevent concurrent overwrites |
+
+### GDPR Compliance
+
+Prism implements the full GDPR lifecycle:
+
+- **Art. 17 (Right to Erasure)**: `session_forget_memory()` — soft delete (tombstone) or hard delete (permanent)
+- **Art. 20 (Data Portability)**: `session_export_memory()` — full ZIP export with API keys redacted
+- **Audit Trail**: `deleted_at` + `deleted_reason` columns preserved for compliance
+
+### Optimistic Concurrency Control (OCC)
+
+```typescript
+// When multiple agents write to the same project handoff:
+await saveHandoff({
+  project: "my-app",
+  expected_version: 25,     // "I read version 25, only save if it hasn't changed"
+  last_summary: "Built auth flow",
+});
+// If another agent saved version 26 meanwhile → OCC rejection error
+// The calling agent must re-read and retry
+```
+
+---
+
+## 8. Storage Backend Architecture
+
+### Unified Interface
+
+Both SQLite and Supabase implement the same `StorageBackend` interface (`src/storage/interface.ts`), ensuring feature parity:
+
+```typescript
+interface StorageBackend {
+  // Core CRUD
+  saveLedger(entry): Promise<LedgerEntry>
+  loadContext(project, level, userId): Promise<ContextResult>
+  searchMemory(query, embedding, userId): Promise<SemanticSearchResult[]>
+
+  // v5.0: Compression
+  patchLedger(id, patch, userId): Promise<void>  // atomic embedding + compressed update
+
+  // v5.1: Purge
+  purgeHighPrecisionEmbeddings(params): Promise<{eligible, purged, reclaimedBytes}>
+
+  // Lifecycle
+  expireByTTL(project, days, userId): Promise<{expired: number}>
+  close(): Promise<void>
+}
+```
+
+### SQLite (Local-First)
+
+```
+~/.prism/prism.db
+├── session_ledger          (main table — all memory entries)
+│   ├── embedding           (float32 BLOB — Tier 1, NULLable after purge)
+│   ├── embedding_compressed (base64 TEXT — Tier 2, always preserved)
+│   └── vec_session_embeddings (virtual table — sqlite-vec index)
+├── session_handoffs        (live project state + OCC version)
+├── history_snapshots       (time travel audit log)
+├── prism_settings          (dashboard configuration)
+└── prism_media_vault       (visual memory metadata)
+```
+
+### Supabase (Cloud)
+
+```
+PostgreSQL via PostgREST API
+├── session_ledger          (same schema, pgvector for embeddings)
+├── session_handoffs        (same schema)
+├── prism_schema_versions   (auto-migration tracking)
+└── RPC Functions:
+    ├── get_session_context()         (progressive context loading)
+    ├── prism_apply_ddl()            (auto-migration runner)
+    ├── prism_adjust_importance()    (atomic behavioral voting)
+    ├── prism_decay_importance()     (importance decay sweep)
+    └── prism_purge_embeddings()     (v5.1 deep storage purge)
+```
+
+---
+
+## 9. Performance Benchmarks
+
+### Compression Quality (from `tests/turboquant.test.ts`)
+
+| Metric | 4-bit (turbo4) | 3-bit (turbo3) |
+|--------|---------------|----------------|
+| Compressed size (d=768) | ~400 bytes | ~350 bytes |
+| Compression ratio | 7.7× | 10.1× |
+| Similarity correlation | > 0.85 | > 0.75 |
+| Top-1 retrieval (N=100) | > 90% | > 80% |
+| Top-5 retrieval (N=100) | > 95% | > 90% |
+
+### Search Performance
+
+| Tier | Latency (100 entries) | Latency (10K entries) |
+|------|----------------------|----------------------|
+| Tier 1 (sqlite-vec) | < 1ms | < 10ms |
+| Tier 2 (JS asymmetric) | ~5ms | ~50ms |
+| Tier 0 (FTS5 keywords) | < 1ms | < 5ms |
+
+### Storage Projection (Power User, 10 sessions/day)
+
+| Timeframe | Without TurboQuant | With v5.0 | With v5.0 + v5.1 Purge |
+|-----------|-------------------|-----------|----------------------|
+| 1 month | 924 KB | 1,044 KB | 312 KB |
+| 1 year | 11.2 MB | 12.7 MB | 1.6 MB |
+| 5 years | 56 MB | 63 MB | 7.5 MB |
+
+> **Note**: v5.0 alone *increases* total storage slightly (both tiers stored), but v5.0 + v5.1's purge results in dramatic savings for long-term data.
+
+---
+
+## 10. Future Directions
+
+### Near-Term (v5.2+)
+- **Adaptive Bit Allocation**: Dynamically choose 3-bit vs 4-bit based on vector density
+- **Background Purge Scheduler**: Auto-purge on a cron schedule (configurable in dashboard)
+- **CRDT Handoff Merging**: Conflict-free concurrent multi-agent edits
+
+### Medium-Term
+- **Knowledge Graph Navigation**: Visual node graph in Mind Palace for exploring memory connections
+- **Autonomous Web Scholar**: Agent-driven learning pipeline using external search APIs
+
+### Long-Term
+- **Federated Memory Sync**: Peer-to-peer memory sharing between Prism instances
+- **Quantization-Aware Training**: Fine-tuned embeddings optimized for TurboQuant compression
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines. The key architectural invariants:
+
+1. **Local-first**: Every feature must work without cloud APIs
+2. **Zero dependencies for core math**: TurboQuant has no `npm` dependencies
+3. **Backward compatible**: New columns always have defaults; old clients still work
+4. **Multi-tenant by default**: Every query scopes to `user_id`
+5. **Test everything**: 303+ tests across 13 suites, zero tolerance for regressions
+
+---
+
+<sub>**Prism MCP v5.1** — Architecture documentation generated from the living codebase. Last updated: March 2026.</sub>
+</file>
+
+<file path="docs/self-improving-agent.md">
+# How to Build a Self-Improving Agent with Prism MCP
+
+> **An agent that learns from its mistakes, remembers what works, and gets better at its job over time — all running locally.**
+
+This guide walks you through building an AI agent that uses Prism MCP's behavioral memory to create a genuine learning loop. By the end, your agent will:
+
+1. **Remember corrections** and avoid repeating mistakes
+2. **Surface learned patterns** at the start of every session
+3. **Graduate insights** into permanent IDE rules
+4. **Self-compact** its memory to stay efficient over months
+
+---
+
+## The Learning Loop
+
+```mermaid
+graph LR
+    A["Agent makes<br/>a mistake"] --> B["User corrects<br/>the agent"]
+    B --> C["Agent saves<br/>correction event"]
+    C --> D["Importance grows<br/>via upvoting"]
+    D --> E["Insight graduates<br/>(importance ≥ 7)"]
+    E --> F["Synced to<br/>.cursorrules"]
+    F --> G["All future sessions<br/>see the rule"]
+    G --> A
+
+    style A fill:#E53E3E,color:#fff
+    style B fill:#E8B004,color:#000
+    style C fill:#4A90D9,color:#fff
+    style D fill:#48BB78,color:#fff
+    style E fill:#9F7AEA,color:#fff
+    style F fill:#805AD5,color:#fff
+    style G fill:#38B2AC,color:#fff
+```
+
+---
+
+## Step 1: Record Corrections
+
+When your agent gets corrected by the user, save it as a behavioral event:
+
+```typescript
+// Agent was told: "Don't use console.log, use debugLog instead"
+await callTool("session_save_experience", {
+  project: "my-app",
+  event_type: "correction",
+  context: "Adding debug logging to the auth module",
+  action: "Used console.log() for debug output",
+  outcome: "Corrupted MCP stdio stream — agent crashed",
+  correction: "Always use debugLog() from utils/logger.ts instead of console.log()",
+  confidence_score: 95
+});
+```
+
+**Why `correction` matters**: Prism treats corrections specially. They're surfaced as **behavioral warnings** in every future `session_load_context` call, ensuring the agent sees them before starting work.
+
+---
+
+## Step 2: Behavioral Warnings (Automatic)
+
+On the next session, when `session_load_context` is called, Prism automatically includes high-importance corrections:
+
+```json
+{
+  "level": "standard",
+  "project": "my-app",
+  "behavioral_warnings": [
+    {
+      "summary": "Always use debugLog() instead of console.log(). console.log corrupts the MCP stdio stream.",
+      "importance": 5
+    }
+  ]
+}
+```
+
+The agent now sees this warning **before writing any code**, preventing the same mistake.
+
+---
+
+## Step 3: Upvote Important Insights
+
+When a correction proves particularly valuable (e.g., it prevented a production bug), upvote it:
+
+```typescript
+// Found the correction's ledger ID
+await callTool("knowledge_upvote", {
+  id: "abc123-def456"  // The correction entry's UUID
+});
+// importance: 5 → 6
+```
+
+Each upvote increases the `importance` score by 1. Entries with `importance >= 7` are considered **graduated insights**.
+
+---
+
+## Step 4: Graduate to IDE Rules
+
+When an insight reaches importance 7+, sync it permanently into your IDE configuration:
+
+```typescript
+await callTool("knowledge_sync_rules", {
+  project: "my-app",
+  target_file: ".cursorrules"  // or ".clauderules"
+});
+```
+
+This writes the graduated insight into your project's rules file between sentinel markers:
+
+```markdown
+<!-- PRISM:AUTO-RULES:START -->
+## Prism Graduated Insights
+
+- Always use debugLog() instead of console.log(). console.log corrupts the MCP stdio stream.
+- When adding new MCP tools, register in both server.ts tool list AND the CallTool handler switch.
+<!-- PRISM:AUTO-RULES:END -->
+```
+
+**Idempotent**: Running `knowledge_sync_rules` multiple times produces the same file. User-maintained content outside the sentinel markers is never touched.
+
+---
+
+## Step 5: Memory Maintenance
+
+Over months, your agent accumulates hundreds of sessions. Keep memory efficient:
+
+### Auto-Compaction
+
+```typescript
+// Summarize old entries (keeps last 10 intact)
+await callTool("session_compact_ledger", {
+  project: "my-app",
+  threshold: 50,      // trigger when entries > 50
+  keep_recent: 10      // preserve the 10 most recent
+});
+```
+
+Old entries are summarized by Gemini into a single rollup entry, and originals are archived.
+
+### Data Retention Policy
+
+```typescript
+// Auto-expire entries older than 90 days
+await callTool("knowledge_set_retention", {
+  project: "my-app",
+  ttl_days: 90
+});
+```
+
+### Deep Storage Purge (v5.1)
+
+```typescript
+// Reclaim ~90% of vector storage for old entries
+await callTool("deep_storage_purge", {
+  project: "my-app",
+  older_than_days: 30,
+  dry_run: true  // preview first!
+});
+```
+
+---
+
+## The Full Agent Configuration
+
+Here's a complete `.cursorrules` setup for a self-improving agent:
+
+```markdown
+## Memory Protocol
+
+At the START of every session:
+1. Call `session_load_context` for this project
+2. Review any behavioral_warnings in the response
+3. Apply all warnings as constraints for this session
+
+At the END of every session:
+1. Call `session_save_ledger` with a summary of work done
+2. If corrected by the user, also call `session_save_experience` with event_type: "correction"
+3. Call `session_save_handoff` with open TODOs for the next session
+
+When a correction proves valuable:
+1. Find its ID via `knowledge_search`
+2. Call `knowledge_upvote` to increase its importance
+3. When importance ≥ 7, call `knowledge_sync_rules` to persist it
+
+Monthly maintenance:
+1. Run `session_compact_ledger` to summarize old sessions
+2. Run `deep_storage_purge` with dry_run: true to check storage savings
+3. If savings are significant, run without dry_run
+```
+
+---
+
+## Why This Works
+
+| Traditional Agent | Self-Improving Agent (Prism) |
+|-------------------|----------------------------|
+| Forgets everything between sessions | Remembers across all sessions |
+| Repeats the same mistakes | Warns itself about past corrections |
+| No learning curve | Accumulates domain expertise over time |
+| Configuration is static | Configuration evolves from experience |
+| Memory bloats over time | Auto-compacts and purges efficiently |
+
+The key insight: **AI agents don't need to be retrained to improve**. They need a memory system that captures corrections, surfaces them proactively, and graduates the most important ones into permanent rules.
+
+Prism MCP provides that system — running entirely on your local machine, with zero cloud dependencies.
+
+---
+
+<sub>**Prism MCP v5.1** — Self-improving agent guide. Last updated: March 2026.</sub>
+</file>
+
+<file path="examples/langgraph-ts/agent.ts">
+/**
+ * Prism Memory-Augmented Agent — TypeScript LangGraph Example
+ * ═══════════════════════════════════════════════════════════════════
+ * A reference implementation of a LangGraph agent that uses Prism MCP
+ * as its persistent memory backend. This is the TypeScript companion
+ * to the Python example in ../langgraph-agent/.
+ *
+ * THE AGENT LOOP:
+ *   1. Load context — recover previous session state from Prism
+ *   2. Search memory — check if similar work was done before
+ *   3. Research — perform new work (simulated here)
+ *   4. Save session — persist findings back to Prism
+ *
+ * WHY THIS MATTERS:
+ *   Without persistent memory, every LangGraph run starts from zero.
+ *   With Prism, the agent remembers past sessions, avoids redundant
+ *   work, and accumulates institutional knowledge across runs.
+ *
+ * PREREQUISITES:
+ *   npm install @langchain/core @langchain/langgraph @modelcontextprotocol/sdk
+ *
+ * RUN:
+ *   npx tsx agent.ts
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+import { PrismClient } from "./prism-client.js";
+import { createMemorySearchNode, createKnowledgeSearchNode } from "./retriever.js";
+
+// ─── Configuration ───────────────────────────────────────────────
+const PROJECT = process.env.PRISM_PROJECT || "langgraph-demo";
+
+/**
+ * Main agent loop demonstrating memory-augmented research.
+ *
+ * DESIGN NOTES:
+ *   This is a simplified agent for demonstration purposes. In production,
+ *   you would use LangGraph's StateGraph to define the flow declaratively.
+ *   The core pattern remains the same:
+ *     load context → search memory → work → save session
+ */
+async function main() {
+  const client = new PrismClient();
+
+  try {
+    // ── Step 1: Connect to Prism ──────────────────────────────────
+    console.log("🧠 Connecting to Prism MCP server...");
+    await client.connect();
+
+    // ── Step 2: Load previous context ──────────────────────────────
+    console.log(`\n📚 Loading context for project: ${PROJECT}`);
+    const context = await client.loadContext(PROJECT, "standard");
+    if (context) {
+      console.log("Previous context found:");
+      console.log(context.slice(0, 500));  // Show first 500 chars
+    } else {
+      console.log("No previous context — this is a fresh project.");
+    }
+
+    // ── Step 3: Search memory for related work ─────────────────────
+    const query = process.argv[2] || "recent architectural decisions";
+    console.log(`\n🔍 Searching memory: "${query}"`);
+
+    const memoryNode = createMemorySearchNode(client, PROJECT, {
+      limit: 3,
+      threshold: 0.65,
+      enableTrace: true,
+    });
+
+    const memoryResults = await memoryNode({ query });
+    if (memoryResults.memories.length > 0) {
+      console.log(`Found ${memoryResults.memories.length} relevant memories:`);
+      memoryResults.memories.forEach((m, i) => {
+        console.log(`  ${i + 1}. ${m.summary} (score: ${m.score?.toFixed(2) ?? "N/A"})`);
+      });
+    } else {
+      console.log("No relevant memories found — doing fresh research.");
+    }
+
+    // ── Step 4: Search knowledge base ──────────────────────────────
+    console.log(`\n📖 Searching knowledge: "${query}"`);
+    const knowledgeNode = createKnowledgeSearchNode(client, PROJECT);
+    const knowledgeResults = await knowledgeNode({ query });
+    if (knowledgeResults.knowledge.length > 0) {
+      console.log(`Found ${knowledgeResults.knowledge.length} knowledge entries:`);
+      knowledgeResults.knowledge.slice(0, 3).forEach((k) => {
+        console.log(`  • ${k.slice(0, 120)}`);
+      });
+    }
+
+    // ── Step 5: Do research (simulated) ────────────────────────────
+    console.log("\n🔬 Performing research... (simulated)");
+    const researchFindings = `Investigated: ${query}. Found patterns in existing codebase.`;
+    console.log(`  Result: ${researchFindings}`);
+
+    // ── Step 6: Save session to Prism ──────────────────────────────
+    console.log("\n💾 Saving session to Prism ledger...");
+    await client.saveLedger({
+      project: PROJECT,
+      summary: `LangGraph agent researched: ${query}. ${researchFindings}`,
+      decisions: ["Used Prism memory-augmented research pattern"],
+      todos: ["Follow up on research findings"],
+    });
+    console.log("  ✅ Session saved successfully!");
+
+    // ── Summary ───────────────────────────────────────────────────
+    console.log("\n" + "═".repeat(60));
+    console.log("🎉 Agent run complete! Memory persisted to Prism.");
+    console.log("  Next run will recover this session's findings.");
+    console.log("═".repeat(60));
+
+  } catch (error) {
+    console.error("Agent error:", error);
+    process.exitCode = 1;
+  } finally {
+    await client.disconnect();
+  }
+}
+
+// Run the agent
+main();
+</file>
+
+<file path="examples/langgraph-ts/prism-client.ts">
+/**
+ * Prism MCP Client — TypeScript Wrapper
+ * ═══════════════════════════════════════════════════════════════════
+ * Lightweight MCP client that connects to the Prism MCP server via
+ * stdio transport and exposes tool calling as simple async functions.
+ *
+ * USAGE:
+ *   const client = new PrismClient();
+ *   await client.connect();
+ *   const result = await client.callTool("session_search_memory", { query: "auth" });
+ *
+ * DESIGN DECISIONS:
+ *   - Uses the official @modelcontextprotocol/sdk for protocol compliance
+ *   - Connects via stdio (same transport as Claude Desktop / Cursor)
+ *   - Auto-discovers Prism server binary from node_modules or PATH
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+/**
+ * Result from an MCP tool call.
+ * content[0] = text results, content[1] = optional MemoryTrace (if enable_trace=true)
+ */
+export interface ToolResult {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+}
+
+/**
+ * Wrapper around the MCP SDK client for Prism-specific tool calls.
+ *
+ * WHY A WRAPPER?
+ *   The raw MCP SDK requires verbose setup (transport init, capability negotiation,
+ *   JSON-RPC framing). This class reduces it to 2 lines: connect() + callTool().
+ *
+ *   It also handles the Prism-specific patterns:
+ *   - MemoryTrace parsing from content[1]
+ *   - Error extraction from isError responses
+ *   - Type-safe argument passing
+ */
+export class PrismClient {
+  private client: Client;
+  private transport: StdioClientTransport | null = null;
+
+  constructor() {
+    this.client = new Client(
+      { name: "langgraph-ts-agent", version: "1.0.0" },
+      { capabilities: {} }
+    );
+  }
+
+  /**
+   * Connect to the Prism MCP server via stdio.
+   *
+   * The server binary is discovered from the prism-mcp-server npm package.
+   * Make sure prism-mcp-server is installed: npm install prism-mcp-server
+   */
+  async connect(): Promise<void> {
+    this.transport = new StdioClientTransport({
+      command: "npx",
+      args: ["-y", "prism-mcp-server"],
+    });
+
+    await this.client.connect(this.transport);
+    console.log("[PrismClient] Connected to Prism MCP server");
+  }
+
+  /**
+   * Call a Prism MCP tool by name.
+   *
+   * @param toolName - The MCP tool name (e.g., "session_search_memory")
+   * @param args - Tool arguments as a plain object
+   * @returns The raw MCP tool result with content blocks
+   *
+   * @example
+   * const result = await client.callTool("session_search_memory", {
+   *   query: "authentication patterns",
+   *   project: "my-app",
+   *   enable_trace: true
+   * });
+   */
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
+    const result = await this.client.callTool({
+      name: toolName,
+      arguments: args,
+    });
+    return result as unknown as ToolResult;
+  }
+
+  /**
+   * Convenience: Search Prism's semantic memory.
+   * Wraps session_search_memory with sane defaults.
+   */
+  async searchMemory(
+    query: string,
+    options: { project?: string; limit?: number; threshold?: number } = {}
+  ): Promise<string> {
+    const result = await this.callTool("session_search_memory", {
+      query,
+      project: options.project,
+      limit: options.limit ?? 5,
+      similarity_threshold: options.threshold ?? 0.7,
+    });
+    return result.content?.[0]?.text ?? "";
+  }
+
+  /**
+   * Convenience: Search Prism's keyword-based knowledge.
+   * Wraps knowledge_search with sane defaults.
+   */
+  async searchKnowledge(
+    query: string,
+    options: { project?: string; category?: string; limit?: number } = {}
+  ): Promise<string> {
+    const result = await this.callTool("knowledge_search", {
+      query,
+      project: options.project,
+      category: options.category,
+      limit: options.limit ?? 10,
+    });
+    return result.content?.[0]?.text ?? "";
+  }
+
+  /**
+   * Convenience: Save a session to the Prism ledger.
+   * Wraps session_save_ledger with required fields.
+   */
+  async saveLedger(params: {
+    project: string;
+    summary: string;
+    conversationId?: string;
+    todos?: string[];
+    decisions?: string[];
+    filesChanged?: string[];
+  }): Promise<void> {
+    await this.callTool("session_save_ledger", {
+      project: params.project,
+      summary: params.summary,
+      conversation_id: params.conversationId ?? `langgraph-${Date.now()}`,
+      todos: params.todos,
+      decisions: params.decisions,
+      files_changed: params.filesChanged,
+    });
+  }
+
+  /**
+   * Convenience: Load project context for session resumption.
+   */
+  async loadContext(
+    project: string,
+    level: "quick" | "standard" | "deep" = "standard"
+  ): Promise<string> {
+    const result = await this.callTool("session_load_context", {
+      project,
+      level,
+    });
+    return result.content?.[0]?.text ?? "";
+  }
+
+  /** Disconnect from the MCP server */
+  async disconnect(): Promise<void> {
+    if (this.transport) {
+      await this.transport.close();
+      console.log("[PrismClient] Disconnected");
+    }
+  }
+}
+</file>
+
+<file path="examples/langgraph-ts/README.md">
+# Prism MCP — TypeScript LangGraph Agent Example
+
+> A reference implementation showing how to use Prism MCP as the memory backend for a LangGraph agent in TypeScript.
+
+## Overview
+
+This example demonstrates:
+1. **MCP Client** — Connect to the Prism MCP server via stdio transport
+2. **Memory Retriever** — Custom LangGraph node that searches Prism's semantic memory
+3. **Agent Loop** — A LangGraph agent that uses Prism for session persistence
+
+## Prerequisites
+
+```bash
+npm install @langchain/core @langchain/langgraph @modelcontextprotocol/sdk
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────┐
+│  LangGraph Agent (TypeScript)       │
+│                                     │
+│  ┌──────────┐   ┌────────────────┐  │
+│  │ Research  │──▶│ Save to Prism  │  │
+│  │ Node      │   │ (ledger save)  │  │
+│  └──────────┘   └────────────────┘  │
+│       │                              │
+│       ▼                              │
+│  ┌──────────────────┐               │
+│  │ Memory Retriever  │              │
+│  │ (search Prism)    │              │
+│  └──────────────────┘               │
+│       │                              │
+│       ▼ MCP stdio                    │
+├─────────────────────────────────────┤
+│  Prism MCP Server (Node.js)         │
+│  session_search_memory              │
+│  session_save_ledger                │
+│  knowledge_search                   │
+└─────────────────────────────────────┘
+```
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Run the agent (Prism MCP server must be running)
+npx tsx agent.ts
+```
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `agent.ts` | LangGraph agent with Prism memory nodes |
+| `prism-client.ts` | MCP client wrapper for Prism tools |
+| `retriever.ts` | LangGraph-compatible memory retriever node |
+
+## Integration Patterns
+
+### Pattern 1: Memory-Augmented Research Agent
+
+The agent searches Prism memory before doing external research, avoiding redundant work:
+
+```typescript
+import { PrismMemoryRetriever } from "./retriever";
+
+const retriever = new PrismMemoryRetriever(client, "my-project");
+const existing = await retriever.search("auth flow implementation");
+
+if (existing.length > 0) {
+  console.log("Found in memory:", existing[0].summary);
+} else {
+  // Do external research...
+}
+```
+
+### Pattern 2: Session Persistence
+
+Save research findings back to Prism at the end of each agent run:
+
+```typescript
+await client.callTool("session_save_ledger", {
+  project: "my-project",
+  summary: "Researched OAuth2 PKCE flow for SPA authentication",
+  decisions: ["Use PKCE instead of implicit grant"],
+  files_changed: ["src/auth/oauth.ts"]
+});
+```
+
+### Pattern 3: Self-Improving Loop
+
+Record corrections as behavioral events:
+
+```typescript
+await client.callTool("session_save_experience", {
+  project: "my-project",
+  event_type: "correction",
+  context: "Building auth module",
+  action: "Used localStorage for tokens",
+  outcome: "XSS vulnerability",
+  correction: "Always use httpOnly cookies for auth tokens"
+});
+```
+
+## See Also
+
+- [Python LangGraph Example](../langgraph-agent/) — Full Python implementation
+- [Architecture Guide](../../docs/ARCHITECTURE.md) — How Prism's memory system works
+- [Self-Improving Agent Guide](../../docs/self-improving-agent.md) — Building agents that learn
+</file>
+
+<file path="examples/langgraph-ts/retriever.ts">
+/**
+ * Prism Memory Retriever — LangGraph-Compatible Node
+ * ═══════════════════════════════════════════════════════════════════
+ * A retriever node for LangGraph that searches Prism MCP's memory
+ * and returns results as structured state updates.
+ *
+ * This is the TypeScript equivalent of the Python PrismMemoryRetriever
+ * in ../langgraph-agent/prism_retriever.py.
+ *
+ * KEY DIFFERENCE FROM PYTHON VERSION:
+ *   TypeScript/LangGraph.js uses graph nodes instead of BaseRetriever.
+ *   Each node is an async function that reads/writes to the graph state.
+ *   This is simpler than the Python LangChain adapter pattern.
+ *
+ * USAGE IN A LANGGRAPH GRAPH:
+ *   const graph = new StateGraph(AgentState)
+ *     .addNode("search_memory", searchMemoryNode)
+ *     .addNode("research", researchNode)
+ *     .addEdge("search_memory", "research");
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+import { PrismClient } from "./prism-client.js";
+
+/**
+ * The MEMORY TRACE marker — must match src/utils/tracing.ts.
+ * When enable_trace=true, Prism appends a second content block
+ * with this marker, containing latency and scoring metadata.
+ */
+const TRACE_MARKER = "=== MEMORY TRACE ===";
+
+/**
+ * A single memory search result parsed from Prism's response.
+ */
+export interface MemoryResult {
+  /** The matched summary text from the ledger */
+  summary: string;
+  /** Similarity score (0-1) — higher is more relevant */
+  score?: number;
+  /** Project the memory belongs to */
+  project?: string;
+  /** Optional parsed MemoryTrace for observability */
+  trace?: Record<string, unknown>;
+}
+
+/**
+ * Parse MemoryTrace JSON from the second content block.
+ *
+ * DESIGN NOTE:
+ *   Prism returns traces in content[1] (content[0] is the results text).
+ *   The trace is prefixed with "=== MEMORY TRACE ===" as a sentinel.
+ *   This function safely extracts the JSON, returning null if unavailable.
+ *
+ * @param contentBlocks - Raw MCP content block array
+ * @returns Parsed trace object, or null
+ */
+function parseTraceBlock(
+  contentBlocks: Array<{ type: string; text: string }>
+): Record<string, unknown> | null {
+  if (contentBlocks.length < 2) return null;
+
+  const traceText = contentBlocks[1]?.text ?? "";
+  if (!traceText.includes(TRACE_MARKER)) return null;
+
+  try {
+    const rawJson = traceText.replace(TRACE_MARKER, "").trim();
+    return JSON.parse(rawJson);
+  } catch {
+    console.warn("[PrismRetriever] Failed to parse MemoryTrace JSON");
+    return null;
+  }
+}
+
+/**
+ * Create a LangGraph-compatible memory search node.
+ *
+ * This factory creates an async function suitable for use as a
+ * LangGraph node. It searches Prism's semantic memory and returns
+ * the results as an array of MemoryResult objects.
+ *
+ * WHY A FACTORY?
+ *   LangGraph nodes are functions with a specific signature:
+ *     (state: S) => Promise<Partial<S>>
+ *   The factory captures the PrismClient in a closure, allowing
+ *   the node to be stateless while still having MCP access.
+ *
+ * @param client - Connected PrismClient instance
+ * @param project - Optional project filter
+ * @param options - Search configuration
+ * @returns Async function suitable for graph.addNode()
+ *
+ * @example
+ * const node = createMemorySearchNode(client, "my-project");
+ * const results = await node({ query: "auth patterns" });
+ */
+export function createMemorySearchNode(
+  client: PrismClient,
+  project?: string,
+  options: { limit?: number; threshold?: number; enableTrace?: boolean } = {}
+) {
+  const { limit = 5, threshold = 0.7, enableTrace = true } = options;
+
+  return async (state: { query: string }): Promise<{ memories: MemoryResult[] }> => {
+    const result = await client.callTool("session_search_memory", {
+      query: state.query,
+      project,
+      limit,
+      similarity_threshold: threshold,
+      enable_trace: enableTrace,
+    });
+
+    if (result.isError) {
+      console.error("[PrismRetriever] Search failed:", result.content?.[0]?.text);
+      return { memories: [] };
+    }
+
+    const text = result.content?.[0]?.text ?? "";
+    const trace = enableTrace ? parseTraceBlock(result.content) : null;
+
+    // Parse the text response into individual results
+    // Prism returns results as numbered items: "1. [project] summary (score: 0.85)"
+    const memories: MemoryResult[] = text
+      .split("\n")
+      .filter((line: string) => line.match(/^\d+\./))
+      .map((line: string) => {
+        const scoreMatch = line.match(/\(score:\s*([\d.]+)\)/);
+        const projectMatch = line.match(/\[([^\]]+)\]/);
+        return {
+          summary: line.replace(/^\d+\.\s*/, "").replace(/\(score:.*\)/, "").trim(),
+          score: scoreMatch ? parseFloat(scoreMatch[1]) : undefined,
+          project: projectMatch ? projectMatch[1] : project,
+          trace: trace ?? undefined,
+        };
+      });
+
+    return { memories };
+  };
+}
+
+/**
+ * Create a LangGraph-compatible knowledge search node.
+ *
+ * Searches Prism's keyword-based knowledge (FTS5 full-text search).
+ * Complements the semantic memory search — use both for hybrid retrieval.
+ *
+ * @param client - Connected PrismClient instance
+ * @param project - Optional project filter
+ * @param category - Optional category filter (e.g., "debugging", "architecture")
+ */
+export function createKnowledgeSearchNode(
+  client: PrismClient,
+  project?: string,
+  category?: string
+) {
+  return async (state: { query: string }): Promise<{ knowledge: string[] }> => {
+    const result = await client.callTool("knowledge_search", {
+      query: state.query,
+      project,
+      category,
+      limit: 10,
+    });
+
+    if (result.isError) {
+      console.error("[PrismRetriever] Knowledge search failed:", result.content?.[0]?.text);
+      return { knowledge: [] };
+    }
+
+    const text = result.content?.[0]?.text ?? "";
+    const knowledge = text
+      .split("\n")
+      .filter((line: string) => line.trim().length > 0);
+
+    return { knowledge };
+  };
+}
+</file>
+
+<file path="src/dashboard/server.ts">
+/**
+ * Mind Palace Dashboard — HTTP Server (v2.0 — Step 8)
+ *
+ * Zero-dependency HTTP server serving the Prism Mind Palace UI.
+ * Runs alongside the MCP stdio server on a separate port.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * CRITICAL MCP SAFETY:
+ *   The MCP server communicates via stdout. ANY console.log() here
+ *   will corrupt the JSON-RPC stream and crash the agent.
+ *   All logging uses console.error() exclusively.
+ *
+ * ENDPOINTS:
+ *   GET /                   → Dashboard UI (HTML)
+ *   GET /api/projects       → List all projects with handoff data
+ *   GET /api/project?name=  → Full project data (context, ledger, history)
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+import * as http from "http";
+import { exec } from "child_process";
+import { getStorage } from "../storage/index.js";
+import { PRISM_USER_ID, SERVER_CONFIG } from "../config.js";
+import { renderDashboardHTML } from "./ui.js";
+import { getAllSettings, setSetting, getSetting } from "../storage/configStorage.js";
+import { compactLedgerHandler } from "../tools/compactionHandler.js";
+
+
+const PORT = parseInt(process.env.PRISM_DASHBOARD_PORT || "3000", 10);
+
+/** Read HTTP request body as string */
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.on("data", chunk => { data += chunk; });
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
+
+/**
+ * Kill any existing process holding the dashboard port.
+ * This prevents zombie dashboard processes from surviving IDE restarts
+ * and serving stale versions of the UI.
+ *
+ * CRITICAL: Uses async exec() instead of execSync() to avoid blocking
+ * the Node.js event loop. Blocking during startup prevents the MCP
+ * stdio transport from responding to the initialize handshake in time,
+ * causing Antigravity to report MCP_SERVER_INIT_ERROR.
+ */
+async function killPortHolder(port: number): Promise<void> {
+  return new Promise((resolve) => {
+    exec(`lsof -ti tcp:${port}`, { encoding: "utf-8" }, (err, stdout) => {
+      if (err) {
+        // lsof exits with code 1 when no matches found — that's expected.
+        // Any other failure (lsof missing, permission denied, etc.) gets a warning.
+        const isNoMatch = err.code === 1;
+        if (!isNoMatch) {
+          console.error(
+            `[Dashboard] killPortHolder: could not check port ${port} (lsof may not be installed) — skipping.`
+          );
+        }
+        return resolve();
+      }
+
+      const pids = stdout.trim().split("\n").filter(Boolean);
+      if (pids.length === 0) return resolve();
+
+      // Don't kill ourselves
+      const myPid = String(process.pid);
+      const stalePids = pids.filter(p => p !== myPid);
+
+      if (stalePids.length > 0) {
+        console.error(`[Dashboard] Killing stale process(es) on port ${port}: ${stalePids.join(", ")}`);
+        exec(`kill ${stalePids.join(" ")}`, () => {
+          // Brief pause to let the OS release the port
+          setTimeout(resolve, 300);
+        });
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+export async function startDashboardServer(): Promise<void> {
+  // Fire-and-forget port cleanup — don't block server start.
+  // Previously awaiting this added 300ms+ delay from lsof + setTimeout,
+  // starving the MCP stdio transport during the init handshake.
+  killPortHolder(PORT).catch(() => {});
+
+  // Lazy storage accessor — returns null if storage isn't ready yet.
+  // API routes gracefully degrade with 503 instead of blocking startup.
+  let _storage: Awaited<ReturnType<typeof getStorage>> | null = null;
+  const getStorageSafe = async (): Promise<Awaited<ReturnType<typeof getStorage>> | null> => {
+    if (_storage) return _storage;
+    try {
+      _storage = await getStorage();
+      return _storage;
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * v5.1: Optional HTTP Basic Auth for remote dashboard access.
+   *
+   * HOW IT WORKS:
+   *   1. If PRISM_DASHBOARD_USER and PRISM_DASHBOARD_PASS are NOT set → auth is disabled (backward compatible)
+   *   2. If set → every request must provide Basic Auth credentials OR a valid session cookie
+   *   3. On successful auth → a session cookie (24h) is set so users don't re-authenticate on every request
+   *   4. On failure → a styled login page is shown (not a raw 401 popup)
+   *
+   * SECURITY NOTES:
+   *   - This is HTTP Basic Auth — suitable for LAN/VPN access, NOT public internet without HTTPS
+   *   - Session tokens are random 64-char hex strings stored in-memory (cleared on server restart)
+   *   - Timing-safe comparison prevents credential timing attacks
+   */
+  const AUTH_USER = process.env.PRISM_DASHBOARD_USER || "";
+  const AUTH_PASS = process.env.PRISM_DASHBOARD_PASS || "";
+  const AUTH_ENABLED = AUTH_USER.length > 0 && AUTH_PASS.length > 0;
+  const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+  const activeSessions = new Map<string, number>(); // token → expiry timestamp
+
+  /** Generate a random session token */
+  function generateToken(): string {
+    const chars = "abcdef0123456789";
+    let token = "";
+    for (let i = 0; i < 64; i++) {
+      token += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return token;
+  }
+
+  /** Timing-safe string comparison to prevent timing attacks */
+  function safeCompare(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    let result = 0;
+    for (let i = 0; i < a.length; i++) {
+      result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    }
+    return result === 0;
+  }
+
+  /** Check if request is authenticated (returns true if auth is disabled) */
+  function isAuthenticated(req: http.IncomingMessage): boolean {
+    if (!AUTH_ENABLED) return true;
+
+    // Check session cookie first
+    const cookies = req.headers.cookie || "";
+    const match = cookies.match(/prism_session=([a-f0-9]{64})/);
+    if (match) {
+      const token = match[1];
+      const expiry = activeSessions.get(token);
+      if (expiry && expiry > Date.now()) return true;
+      // Expired — clean up
+      if (expiry) activeSessions.delete(token);
+    }
+
+    // Check Basic Auth header
+    const authHeader = req.headers.authorization || "";
+    if (authHeader.startsWith("Basic ")) {
+      const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
+      const [user, pass] = decoded.split(":");
+      return safeCompare(user || "", AUTH_USER) && safeCompare(pass || "", AUTH_PASS);
+    }
+
+    return false;
+  }
+
+  /** Render a styled login page matching the Mind Palace theme */
+  function renderLoginPage(): string {
+    return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Prism MCP — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e1a;color:#f1f5f9;font-family:'Inter',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.bg{position:fixed;inset:0;background-image:radial-gradient(circle at 20% 30%,rgba(139,92,246,0.08) 0%,transparent 50%),radial-gradient(circle at 80% 70%,rgba(59,130,246,0.06) 0%,transparent 50%)}
+.login-card{position:relative;z-index:1;background:rgba(17,24,39,0.6);backdrop-filter:blur(16px);border:1px solid rgba(139,92,246,0.15);border-radius:16px;padding:2.5rem;width:380px;max-width:90vw;text-align:center}
+.logo{font-size:1.75rem;font-weight:700;background:linear-gradient(135deg,#8b5cf6,#3b82f6,#06b6d4);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:0.5rem}
+.subtitle{color:#64748b;font-size:0.85rem;margin-bottom:2rem}
+.field{margin-bottom:1rem}
+.field input{width:100%;padding:0.7rem 1rem;background:#111827;border:1px solid rgba(139,92,246,0.15);border-radius:10px;color:#f1f5f9;font-size:0.9rem;font-family:'Inter',sans-serif;outline:none;transition:border-color 0.2s}
+.field input:focus{border-color:rgba(139,92,246,0.5)}
+.field input::placeholder{color:#475569}
+.login-btn{width:100%;padding:0.75rem;background:linear-gradient(135deg,#8b5cf6,#3b82f6);color:white;border:none;border-radius:10px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:opacity 0.2s;margin-top:0.5rem}
+.login-btn:hover{opacity:0.9}
+.error{color:#f43f5e;font-size:0.8rem;margin-top:1rem;display:none}
+.lock{font-size:2rem;margin-bottom:1rem}
+</style></head><body>
+<div class="bg"></div>
+<div class="login-card">
+<div class="lock">🔒</div>
+<div class="logo">🧠 Prism Mind Palace</div>
+<div class="subtitle">Authentication required for remote access</div>
+<form id="loginForm" onsubmit="return handleLogin(event)">
+<div class="field"><input type="text" id="user" placeholder="Username" autocomplete="username" required></div>
+<div class="field"><input type="password" id="pass" placeholder="Password" autocomplete="current-password" required></div>
+<button type="submit" class="login-btn">Sign In</button>
+</form>
+<div class="error" id="error">Invalid credentials</div>
+</div>
+<script>
+async function handleLogin(e){e.preventDefault();
+var u=document.getElementById('user').value,p=document.getElementById('pass').value;
+var r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:u,pass:p})});
+if(r.ok){window.location.reload();}else{document.getElementById('error').style.display='block';}
+return false;}
+</script></body></html>`;
+  }
+
+  if (AUTH_ENABLED) {
+    console.error(`[Dashboard] 🔒 Auth enabled for user "${AUTH_USER}"`);
+  }
+
+  const httpServer = http.createServer(async (req, res) => {
+    // CORS headers for local dev
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      return res.end();
+    }
+
+    // ─── v5.1: Auth login endpoint (always accessible) ───
+    const reqUrl = new URL(req.url || "/", `http://${req.headers.host}`);
+    if (AUTH_ENABLED && reqUrl.pathname === "/api/auth/login" && req.method === "POST") {
+      const body = await readBody(req);
+      try {
+        const { user, pass } = JSON.parse(body);
+        if (safeCompare(user || "", AUTH_USER) && safeCompare(pass || "", AUTH_PASS)) {
+          const token = generateToken();
+          activeSessions.set(token, Date.now() + SESSION_TTL_MS);
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Set-Cookie": `prism_session=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_MS / 1000}`,
+          });
+          return res.end(JSON.stringify({ ok: true }));
+        }
+      } catch { /* fall through to 401 */ }
+      res.writeHead(401, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: "Invalid credentials" }));
+    }
+
+    // ─── v5.1: Auth gate — block unauthenticated requests ───
+    if (AUTH_ENABLED && !isAuthenticated(req)) {
+      // For API calls, return 401 JSON
+      if (reqUrl.pathname.startsWith("/api/")) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ error: "Authentication required" }));
+      }
+      // For page requests, show login page
+      res.writeHead(401, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end(renderLoginPage());
+    }
+
+    try {
+      const url = new URL(req.url || "/", `http://${req.headers.host}`);
+
+      // ─── Serve the Dashboard UI ───
+      if (url.pathname === "/" || url.pathname === "/index.html") {
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        });
+        return res.end(renderDashboardHTML(SERVER_CONFIG.version));
+      }
+
+      // ─── API: List all projects ───
+      if (url.pathname === "/api/projects") {
+        const s = await getStorageSafe();
+        if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+        const projects = await s.listProjects();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ projects }));
+      }
+
+      // ─── API: Get full project data ───
+      if (url.pathname === "/api/project") {
+        const projectName = url.searchParams.get("name");
+        if (!projectName) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Missing ?name= parameter" }));
+        }
+
+        const s = await getStorageSafe();
+        if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+        const context = await s.loadContext(projectName, "deep", PRISM_USER_ID);
+        const ledger = await s.getLedgerEntries({
+          project: `eq.${projectName}`,
+          order: "created_at.desc",
+          limit: "20",
+        });
+        let history: unknown[] = [];
+        try {
+          history = await s.getHistory(projectName, PRISM_USER_ID, 10);
+        } catch {
+          // History may not exist for all projects
+        }
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ context, ledger, history }));
+      }
+
+      // ─── API: Brain Health Check (v2.2.0) ───
+      if (url.pathname === "/api/health" && req.method === "GET") {
+        try {
+          const { runHealthCheck } = await import("../utils/healthCheck.js");
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const stats = await s.getHealthStats(PRISM_USER_ID);
+          const report = runHealthCheck(stats);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify(report));
+        } catch (err) {
+          console.error("[Dashboard] Health check error:", err);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({
+            status: "unknown",
+            summary: "Health check unavailable",
+            issues: [],
+            counts: { errors: 0, warnings: 0, infos: 0 },
+            totals: { activeEntries: 0, handoffs: 0, rollups: 0 },
+            timestamp: new Date().toISOString(),
+          }));
+        }
+      }
+
+      // ─── API: Brain Health Cleanup (v3.1) ───
+      // Deletes orphaned handoffs (handoffs with no backing ledger entries).
+      if (url.pathname === "/api/health/cleanup" && req.method === "POST") {
+        try {
+          const { runHealthCheck } = await import("../utils/healthCheck.js");
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const stats = await s.getHealthStats(PRISM_USER_ID);
+          const report = runHealthCheck(stats);
+
+          // Collect orphaned handoff projects from the health issues
+          const orphaned = stats.orphanedHandoffs || [];
+          const cleaned: string[] = [];
+
+          for (const { project } of orphaned) {
+            try {
+              await s.deleteHandoff(project, PRISM_USER_ID);
+              cleaned.push(project);
+              console.error(`[Dashboard] Cleaned up orphaned handoff: ${project}`);
+            } catch (delErr) {
+              console.error(`[Dashboard] Failed to delete handoff for ${project}:`, delErr);
+            }
+          }
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({
+            ok: true,
+            cleaned,
+            count: cleaned.length,
+            message: cleaned.length > 0
+              ? `Cleaned up ${cleaned.length} orphaned handoff(s): ${cleaned.join(", ")}`
+              : "No orphaned handoffs to clean up.",
+          }));
+        } catch (err) {
+          console.error("[Dashboard] Health cleanup error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: false, error: "Cleanup failed" }));
+        }
+      }
+
+      // ─── API: Role-Scoped Skills (v3.1) ───
+
+      // GET /api/skills → { skills: { dev: "...", qa: "..." } }
+      if (url.pathname === "/api/skills" && req.method === "GET") {
+        const all = await getAllSettings();
+        const skills: Record<string, string> = {};
+        for (const [k, v] of Object.entries(all)) {
+          if (k.startsWith("skill:") && v) {
+            skills[k.replace("skill:", "")] = v;
+          }
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ skills }));
+      }
+
+      // POST /api/skills → { role, content } saves skill:<role>
+      if (url.pathname === "/api/skills" && req.method === "POST") {
+        const body = await new Promise<string>(resolve => {
+          let data = ""; req.on("data", c => data += c); req.on("end", () => resolve(data));
+        });
+        const { role, content } = JSON.parse(body || "{}");
+        if (!role) { res.writeHead(400); return res.end(JSON.stringify({ error: "role required" })); }
+        await setSetting(`skill:${role}`, content || "");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: true, role }));
+      }
+
+      // DELETE /api/skills/:role → clears skill:<role>
+      if (url.pathname.startsWith("/api/skills/") && req.method === "DELETE") {
+        const role = url.pathname.replace("/api/skills/", "");
+        await setSetting(`skill:${role}`, "");
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: true, role }));
+      }
+
+      // ─── API: Knowledge Graph Data (v2.3.0) ───
+      if (url.pathname === "/api/graph") {
+        // Fetch recent ledger entries to build the graph
+        // We look at the last 100 entries to keep the graph relevant but performant
+        const s = await getStorageSafe();
+        if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+        const entries = await s.getLedgerEntries({
+          limit: "100",
+          order: "created_at.desc",
+          select: "project,keywords",
+        });
+
+        // Deduplication sets for nodes and edges
+        const nodes: { id: string; label: string; group: string }[] = [];
+        const edges: { from: string; to: string }[] = [];
+        const nodeIds = new Set<string>();   // track unique node IDs
+        const edgeIds = new Set<string>();   // track unique edges
+
+        // Helper: add a node only if it doesn't already exist
+        const addNode = (id: string, group: string, label?: string) => {
+          if (!nodeIds.has(id)) {
+            nodes.push({ id, label: label || id, group });
+            nodeIds.add(id);
+          }
+        };
+
+        // Helper: add an edge only if it doesn't already exist
+        const addEdge = (from: string, to: string) => {
+          const id = `${from}-${to}`;  // deterministic edge ID
+          if (!edgeIds.has(id)) {
+            edges.push({ from, to });
+            edgeIds.add(id);
+          }
+        };
+
+        // Transform relational data into graph nodes & edges
+        (entries as any[]).forEach(row => {
+          if (!row.project) return;  // skip rows without project
+
+          // 1. Project node (hub — large purple dot)
+          addNode(row.project, "project");
+
+          // 2. Keyword nodes (spokes — small dots)
+          let keywords: string[] = [];
+
+          // Handle SQLite (JSON string) vs Supabase (native array)
+          if (Array.isArray(row.keywords)) {
+            keywords = row.keywords;
+          } else if (typeof row.keywords === "string") {
+            try { keywords = JSON.parse(row.keywords); } catch { /* skip malformed */ }
+          }
+
+          // Create nodes + edges for each keyword
+          keywords.forEach((kw: string) => {
+            if (kw.length < 3) return;  // skip noise like "a", "is"
+
+            // Handle categories (cat:debugging) vs raw keywords
+            const isCat = kw.startsWith("cat:");
+            const group = isCat ? "category" : "keyword";
+            const label = isCat ? kw.replace("cat:", "") : kw;
+
+            addNode(kw, group, label);  // keyword/category node
+            addEdge(row.project, kw);   // edge: project → keyword
+          });
+        });
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ nodes, edges }));
+      }
+
+      // ─── API: Hivemind Team Roster (v3.0) ───
+      if (url.pathname === "/api/team") {
+        const projectName = url.searchParams.get("project");
+        if (!projectName) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Missing ?project= parameter" }));
+        }
+        try {
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const team = await s.listTeam(projectName, PRISM_USER_ID);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ team }));
+        } catch {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ team: [] }));
+        }
+      }
+
+      // ─── API: Settings — GET (v3.0 Dashboard Settings) ───
+      if (url.pathname === "/api/settings" && req.method === "GET") {
+        try {
+          const { getAllSettings } = await import("../storage/configStorage.js");
+          const settings = await getAllSettings();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ settings }));
+        } catch {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ settings: {} }));
+        }
+      }
+
+      // ─── API: Settings — POST (v3.0 Dashboard Settings) ───
+      if (url.pathname === "/api/settings" && req.method === "POST") {
+        try {
+          const body = await readBody(req);
+          const parsed = JSON.parse(body);
+          if (parsed.key && parsed.value !== undefined) {
+            const { setSetting } = await import("../storage/configStorage.js");
+            await setSetting(parsed.key, String(parsed.value));
+            res.writeHead(200, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ ok: true, key: parsed.key, value: parsed.value }));
+          }
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Missing key or value" }));
+        } catch (err) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Invalid JSON body" }));
+        }
+
+      }
+
+      // ─── API: Memory Analytics (v3.1) ────────────────────
+      if (url.pathname === "/api/analytics" && req.method === "GET") {
+        const projectName = url.searchParams.get("project");
+        if (!projectName) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Missing ?project= parameter" }));
+        }
+        try {
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const analytics = await s.getAnalytics(projectName, PRISM_USER_ID);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify(analytics));
+        } catch (err) {
+          console.error("[Dashboard] Analytics error:", err);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({
+            totalEntries: 0, totalRollups: 0, rollupSavings: 0,
+            avgSummaryLength: 0, sessionsByDay: [],
+          }));
+        }
+      }
+
+      // ─── API: Retention (TTL) Settings (v3.1) ──────────────
+      // GET /api/retention?project= → current TTL setting
+      // POST /api/retention → { project, ttl_days } → saves + runs sweep
+      if (url.pathname === "/api/retention") {
+        if (req.method === "GET") {
+          const projectName = url.searchParams.get("project");
+          if (!projectName) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: "Missing ?project= parameter" }));
+          }
+          const ttlRaw = await getSetting(`ttl:${projectName}`, "0");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ project: projectName, ttl_days: parseInt(ttlRaw, 10) || 0 }));
+        }
+
+        if (req.method === "POST") {
+          const body = await readBody(req);
+          const { project, ttl_days } = JSON.parse(body || "{}");
+          if (!project || ttl_days === undefined) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: "project and ttl_days required" }));
+          }
+          if (ttl_days > 0 && ttl_days < 7) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            return res.end(JSON.stringify({ error: "Minimum TTL is 7 days" }));
+          }
+          await setSetting(`ttl:${project}`, String(ttl_days));
+          let expired = 0;
+          if (ttl_days > 0) {
+            const s = await getStorageSafe();
+            if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+            const result = await s.expireByTTL(project, ttl_days, PRISM_USER_ID);
+            expired = result.expired;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: true, project, ttl_days, expired }));
+        }
+      }
+
+      // ─── API: Compact Now (v3.1 — Dashboard button) ──────────
+      if (url.pathname === "/api/compact" && req.method === "POST") {
+        const body = await readBody(req);
+        const { project } = JSON.parse(body || "{}");
+        if (!project) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "project required" }));
+        }
+        try {
+          const result = await compactLedgerHandler({ project });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: true, result }));
+        } catch (err) {
+          console.error("[Dashboard] Compact error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ ok: false, error: "Compaction failed" }));
+        }
+      }
+
+      // ─── API: PKM Export — Obsidian/Logseq ZIP (v3.1) ──────
+      if (url.pathname === "/api/export" && req.method === "GET") {
+        const projectName = url.searchParams.get("project");
+        if (!projectName) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Missing ?project= parameter" }));
+        }
+        try {
+          // Lazy-import fflate to keep startup fast
+          const { strToU8, zipSync } = await import("fflate");
+
+          // Fetch all active ledger entries for this project
+          const s = await getStorageSafe();
+          if (!s) { res.writeHead(503, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "Storage initializing..." })); }
+          const entries = await s.getLedgerEntries({
+            project: `eq.${projectName}`,
+            order: "created_at.asc",
+            limit: "1000",
+          }) as Array<Record<string, unknown>>;
+
+          const files: Record<string, Uint8Array> = {};
+
+          // One MD file per session
+          for (const entry of entries) {
+            const date = (entry.created_at as string | undefined)?.slice(0, 10) ?? "unknown";
+            const id = (entry.id as string | undefined)?.slice(0, 8) ?? "xxxxxxxx";
+            const filename = `${projectName}/${date}-${id}.md`;
+
+            const todos = Array.isArray(entry.todos) ? (entry.todos as string[]) : [];
+            const decisions = Array.isArray(entry.decisions) ? (entry.decisions as string[]) : [];
+            const files_changed = Array.isArray(entry.files_changed) ? (entry.files_changed as string[]) : [];
+            const tags = ((Array.isArray(entry.keywords) ? entry.keywords : []) as string[]).slice(0, 10);
+
+            const content = [
+              `# Session: ${date}`,
+              ``,
+              `**Project:** ${projectName}`,
+              `**Date:** ${date}`,
+              `**Role:** ${(entry.role as string) || "global"}`,
+              tags.length ? `**Tags:** ${tags.map(t => `#${t.replace(/\s+/g, "_")}`).join(" ")}` : "",
+              ``,
+              `## Summary`,
+              ``,
+              entry.summary as string,
+              ``,
+              todos.length ? `## TODOs\n\n${todos.map(t => `- [ ] ${t}`).join("\n")}` : "",
+              decisions.length ? `## Decisions\n\n${decisions.map(d => `- ${d}`).join("\n")}` : "",
+              files_changed.length ? `## Files Changed\n\n${files_changed.map(f => `- \`${f}\``).join("\n")}` : "",
+            ].filter(Boolean).join("\n");
+
+            files[filename] = strToU8(content);
+          }
+
+          // Index file linking all sessions
+          const indexLines = [
+            `# ${projectName} — Session Index`,
+            ``,
+            `> Exported from Prism MCP on ${new Date().toISOString().slice(0, 10)}`,
+            ``,
+            ...entries.map(e => {
+              const d = (e.created_at as string | undefined)?.slice(0, 10) ?? "unknown";
+              const i = (e.id as string | undefined)?.slice(0, 8) ?? "xxxxxxxx";
+              return `- [[${projectName}/${d}-${i}]]`;
+            }),
+          ];
+          files[`${projectName}/_index.md`] = strToU8(indexLines.join("\n"));
+
+          const zipped = zipSync(files, { level: 6 });
+
+          res.writeHead(200, {
+            "Content-Type": "application/zip",
+            "Content-Disposition": `attachment; filename="prism-export-${projectName}-${Date.now()}.zip"`,
+            "Content-Length": String(zipped.byteLength),
+          });
+          return res.end(Buffer.from(zipped));
+        } catch (err) {
+          console.error("[Dashboard] PKM export error:", err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          return res.end(JSON.stringify({ error: "Export failed" }));
+        }
+      }
+
+      // ─── 404 ───
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not found");
+
+
+    } catch (error) {
+      console.error("[Dashboard] Error handling request:", error);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Internal Server Error" }));
+    }
+  });
+
+  // Gracefully handle port conflicts (non-fatal — MCP server keeps running)
+  httpServer.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `[Dashboard] Port ${PORT} is in use — Mind Palace disabled. ` +
+          `Set PRISM_DASHBOARD_PORT to use a different port.`
+      );
+    } else {
+      console.error(`[Dashboard] HTTP server error: ${err.message}`);
+    }
+  });
+
+  httpServer.listen(PORT, () => {
+    console.error(`[Prism] 🧠 Mind Palace Dashboard → http://localhost:${PORT}`);
+  });
+
+  // ─── v3.1: TTL Sweep — runs at startup + every 12 hours ───────────
+  async function runTtlSweep() {
+    try {
+      const allSettings = await getAllSettings();
+      for (const [key, val] of Object.entries(allSettings)) {
+        if (!key.startsWith("ttl:")) continue;
+        const project = key.replace("ttl:", "");
+        const ttlDays = parseInt(val, 10);
+        if (!ttlDays || ttlDays <= 0) continue;
+        const s = await getStorageSafe();
+        if (!s) continue;
+        const result = await s.expireByTTL(project, ttlDays, PRISM_USER_ID);
+        if (result.expired > 0) {
+          console.error(`[Dashboard] TTL sweep: expired ${result.expired} entries for "${project}" (ttl=${ttlDays}d)`);
+        }
+      }
+    } catch (err) {
+      console.error("[Dashboard] TTL sweep error (non-fatal):", err);
+    }
+  }
+
+  // Run immediately on startup, then every 12 hours
+  runTtlSweep().catch(() => {});
+  setInterval(() => { runTtlSweep().catch(() => {}); }, 12 * 60 * 60 * 1000);
+}
+</file>
+
+<file path="src/dashboard/ui.ts">
 /**
  * Mind Palace Dashboard — UI Renderer (v2.3.7)
  *
@@ -493,14 +2635,6 @@ export function renderDashboardHTML(version: string): string {
       border: 1px solid rgba(245,158,11,0.3); border-radius: 6px; cursor: pointer; transition: all 0.2s;
     }
     .ttl-save-btn:hover { background: rgba(245,158,11,0.3); }
-    .node-editor-panel {
-      background: var(--bg-card);
-      border: 1px solid var(--border-glow);
-      border-radius: 8px;
-      padding: 1rem;
-      margin-top: 1rem;
-      display: none;
-    }
   </style>
 </head>
 <body>
@@ -617,48 +2751,14 @@ export function renderDashboardHTML(version: string): string {
       <!-- Right Column -->
       <div class="grid" style="align-content: start;">
 
-        <!-- Neural Graph (v2.3.0 / v5.1) -->
+        <!-- Neural Graph (v2.3.0) -->
         <div class="card">
           <div class="card-title">
             <span class="dot" style="background:var(--accent-blue)"></span>
             Neural Graph 🕸️
             <button onclick="loadGraph()" class="refresh-btn">↻</button>
           </div>
-
-          <!-- v5.1 Graph Filters -->
-          <div style="display:flex; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap;">
-            <select id="graphProjectFilter" class="input-modern" style="min-width:120px; font-size:0.75rem; padding:0.3rem 0.5rem" onchange="loadGraph()">
-              <option value="">All Projects</option>
-            </select>
-            <select id="graphDaysFilter" class="input-modern" style="font-size:0.75rem; padding:0.3rem 0.5rem" onchange="loadGraph()">
-              <option value="">All Time</option>
-              <option value="7">Last 7 Days</option>
-              <option value="30">Last 30 Days</option>
-              <option value="90">Last 90 Days</option>
-            </select>
-            <select id="graphImportanceFilter" class="input-modern" style="font-size:0.75rem; padding:0.3rem 0.5rem" onchange="loadGraph()">
-              <option value="">Any Importance</option>
-              <option value="5">Importance &gt;= 5</option>
-              <option value="7">Graduated (&gt;= 7)</option>
-            </select>
-          </div>
-
           <div id="network-container">Loading nodes...</div>
-          
-          <!-- v5.1 Node Editor Panel -->
-          <div id="nodeEditorPanel" class="node-editor-panel">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
-              <h4 id="nodeEditorTitle" style="margin:0; font-size:0.9rem; color:var(--text-primary);">Node Name</h4>
-              <span id="nodeEditorGroup" class="badge">category</span>
-            </div>
-            
-            <label style="display:block; font-size:0.75rem; color:var(--text-muted); margin-bottom:0.3rem">Rename (Or leave empty to delete)</label>
-            <div style="display:flex; gap:0.5rem;">
-              <input type="text" id="nodeEditorInput" class="input-modern" style="flex:1; font-size:0.8rem; padding:0.3rem 0.6rem" placeholder="New keyword name...">
-              <button onclick="submitNodeEdit()" class="btn-modern" style="padding:0.3rem 0.8rem; font-size:0.8rem">Apply</button>
-              <button onclick="document.getElementById('nodeEditorPanel').style.display='none'" class="btn-modern" style="background:transparent; border-color:var(--border-subtle); padding:0.3rem 0.8rem; font-size:0.8rem">Cancel</button>
-            </div>
-          </div>
         </div>
 
         <!-- Time Travel -->
@@ -1122,12 +3222,6 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
         if (data.projects && data.projects.length > 0) {
           select.innerHTML = '<option value="">— Select a project —</option>' +
             data.projects.map(function(p) { return '<option value="' + p + '">' + p + '</option>'; }).join('');
-            
-          var gp = document.getElementById('graphProjectFilter');
-          if (gp) {
-            gp.innerHTML = '<option value="">All Projects</option>' +
-              data.projects.map(function(p) { return '<option value="' + p + '">' + p + '</option>'; }).join('');
-          }
         } else {
           select.innerHTML = '<option value="">No projects found</option>';
         }
@@ -1432,24 +3526,14 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
     // Allow Enter key in select to trigger load
     document.getElementById('projectSelect').addEventListener('change', loadProject);
 
-    // ─── Neural Graph (v2.3.0 / v5.1) ───
+    // ─── Neural Graph (v2.3.0) ───
     // Renders a force-directed graph of projects ↔ keywords ↔ categories
     async function loadGraph() {
       var container = document.getElementById('network-container');
       if (!container) return;
 
-      var proj = document.getElementById('graphProjectFilter') ? document.getElementById('graphProjectFilter').value : '';
-      var days = document.getElementById('graphDaysFilter') ? document.getElementById('graphDaysFilter').value : '';
-      var imp = document.getElementById('graphImportanceFilter') ? document.getElementById('graphImportanceFilter').value : '';
-      
-      var qs = [];
-      if (proj) qs.push('project=' + encodeURIComponent(proj));
-      if (days) qs.push('days=' + encodeURIComponent(days));
-      if (imp) qs.push('min_importance=' + encodeURIComponent(imp));
-      var url = '/api/graph' + (qs.length ? '?' + qs.join('&') : '');
-
       try {
-        var res = await fetch(url);
+        var res = await fetch('/api/graph');
         var data = await res.json();
 
         // Empty state — no ledger entries yet
@@ -1513,29 +3597,10 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
               network.setData({ nodes: allNodes, edges: allEdges });
               isFiltered = false;
             }
-            var panel = document.getElementById('nodeEditorPanel');
-            if (panel) panel.style.display = 'none';
             return;
           }
 
           var clickedId = params.nodes[0];
-          
-          // Display Node Editor Panel for keywords and categories
-          var nodeData = allNodes.find(function(n) { return n.id === clickedId; });
-          if (nodeData && (nodeData.group === 'keyword' || nodeData.group === 'category')) {
-            document.getElementById('nodeEditorTitle').textContent = nodeData.label;
-            document.getElementById('nodeEditorGroup').textContent = nodeData.group;
-            
-            var input = document.getElementById('nodeEditorInput');
-            input.value = nodeData.label;
-            input.dataset.oldId = clickedId;
-            input.dataset.group = nodeData.group;
-            
-            document.getElementById('nodeEditorPanel').style.display = 'block';
-          } else {
-            var panel = document.getElementById('nodeEditorPanel');
-            if (panel) panel.style.display = 'none';
-          }
 
           // Find all connected edges and nodes
           var connectedEdges = allEdges.filter(function(e) {
@@ -1564,57 +3629,16 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
         // Show node count in the card title area
         var graphTitle = container.parentElement.querySelector('.card-title');
         if (graphTitle) {
-          var statsSpan = graphTitle.querySelector('.graph-stats');
-          if (!statsSpan) {
-            statsSpan = document.createElement('span');
-            statsSpan.className = 'graph-stats';
-            statsSpan.style.cssText = 'margin-left:auto;font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono);font-weight:400;text-transform:none;letter-spacing:0';
-            graphTitle.appendChild(statsSpan);
-          }
+          var statsSpan = document.createElement('span');
+          statsSpan.style.cssText = 'margin-left:auto;font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono);font-weight:400;text-transform:none;letter-spacing:0';
           var projectCount = allNodes.filter(function(n) { return n.group === 'project'; }).length;
           var kwCount = allNodes.filter(function(n) { return n.group === 'keyword'; }).length;
           statsSpan.textContent = projectCount + ' projects · ' + kwCount + ' keywords · ' + allEdges.length + ' edges';
+          graphTitle.appendChild(statsSpan);
         }
       } catch (e) {
         console.error('Graph error', e);
         container.innerHTML = '<div style="padding:1rem;color:var(--accent-rose)">Graph failed to load</div>';
-      }
-    }
-
-    async function submitNodeEdit() {
-      var input = document.getElementById('nodeEditorInput');
-      var btn = input.nextElementSibling;
-      var newId = input.value.trim();
-      var oldId = input.dataset.oldId;
-      var group = input.dataset.group;
-
-      if (!oldId || !group) return;
-
-      btn.disabled = true;
-      btn.textContent = '...';
-
-      try {
-        var res = await fetch('/api/graph/node', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ oldId: oldId, newId: newId, group: group })
-        });
-        
-        if (!res.ok) throw new Error('Failed to update node');
-        
-        showToast(newId ? 'Node renamed successfully' : 'Node deleted successfully');
-        document.getElementById('nodeEditorPanel').style.display = 'none';
-        
-        // Refresh graph and lists
-        loadGraph();
-        if (document.getElementById('projectSelect').value) {
-          loadSessionList(); // refresh active project view too if one is loaded
-        }
-      } catch (err) {
-        showToast(err.message || 'Error updating node', true);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Apply';
       }
     }
 
@@ -2064,3 +4088,6 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
 </body>
 </html>`;
 }
+</file>
+
+</files>

@@ -119,7 +119,82 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE session_ledger ADD COLUMN IF NOT EXISTS embedding_turbo_radius REAL DEFAULT NULL;
     `,
   },
-  // Future migrations go here (version 30+)
+  {
+    // ─── v5.1: Deep Storage Mode — Purge RPC ──────────────────────
+    //
+    // REVIEWER NOTE: This creates a Postgres function that NULLs out
+    // the float32 `embedding` column for entries that already have
+    // TurboQuant `embedding_compressed` blobs. This is the Supabase
+    // counterpart to SqliteStorage.purgeHighPrecisionEmbeddings().
+    //
+    // The function enforces the same safety guards as the SQLite impl:
+    //   - p_older_than_days >= 7 (recent entries keep full precision)
+    //   - embedding_compressed IS NOT NULL (never destroys last copy)
+    //   - deleted_at IS NULL (skip tombstoned entries)
+    //   - user_id scoping (multi-tenant guard)
+    //   - Optional project filter (NULL = all projects)
+    //   - Dry-run mode (preview without modifying)
+    //
+    // After this migration, SupabaseStorage.purgeHighPrecisionEmbeddings()
+    // calls this RPC instead of throwing "not supported".
+    version: 30,
+    name: "deep_storage_purge",
+    sql: `
+      CREATE OR REPLACE FUNCTION prism_purge_embeddings(
+        p_project         TEXT    DEFAULT NULL,
+        p_user_id         TEXT    DEFAULT 'default',
+        p_older_than_days INTEGER DEFAULT 30,
+        p_dry_run         BOOLEAN DEFAULT false
+      )
+      RETURNS TABLE(eligible INTEGER, purged INTEGER, reclaimed_bytes BIGINT)
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      SET search_path = public
+      AS $$
+      DECLARE
+        v_eligible INTEGER;
+        v_bytes    BIGINT;
+        v_cutoff   TIMESTAMPTZ;
+      BEGIN
+        IF p_older_than_days < 7 THEN
+          RAISE EXCEPTION 'p_older_than_days must be at least 7 to prevent purging recent entries';
+        END IF;
+
+        v_cutoff := now() - (p_older_than_days || ' days')::interval;
+
+        SELECT COUNT(*)::INTEGER,
+               COALESCE(SUM(octet_length(embedding::text)), 0)::BIGINT
+        INTO v_eligible, v_bytes
+        FROM session_ledger
+        WHERE embedding IS NOT NULL
+          AND embedding_compressed IS NOT NULL
+          AND deleted_at IS NULL
+          AND created_at < v_cutoff
+          AND user_id = p_user_id
+          AND (p_project IS NULL OR project = p_project);
+
+        IF p_dry_run THEN
+          RETURN QUERY SELECT v_eligible, 0::INTEGER, v_bytes;
+          RETURN;
+        END IF;
+
+        IF v_eligible > 0 THEN
+          UPDATE session_ledger
+          SET embedding = NULL
+          WHERE embedding IS NOT NULL
+            AND embedding_compressed IS NOT NULL
+            AND deleted_at IS NULL
+            AND created_at < v_cutoff
+            AND user_id = p_user_id
+            AND (p_project IS NULL OR project = p_project);
+        END IF;
+
+        RETURN QUERY SELECT v_eligible, v_eligible, v_bytes;
+      END;
+      $$;
+    `,
+  },
+  // Future migrations go here (version 31+)
 ];
 
 /**

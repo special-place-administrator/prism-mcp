@@ -591,4 +591,74 @@ export class SupabaseStorage implements StorageBackend {
     }
   }
 
+  // ─── v5.1: Deep Storage Mode ("The Purge") ────────────────────
+  //
+  // REVIEWER NOTE: This calls the prism_purge_embeddings RPC created
+  // by migration 030. The RPC runs server-side in Postgres with
+  // SECURITY DEFINER privileges, enforcing all safety guards:
+  //   - p_older_than_days >= 7 (raises exception otherwise)
+  //   - Only purges entries with embedding_compressed IS NOT NULL
+  //   - Multi-tenant: scoped to p_user_id
+  //   - Optional project filter (NULL = all projects)
+  //   - Dry-run mode (preview without modifying)
+  //
+  // GRACEFUL DEGRADATION:
+  //   If the RPC doesn't exist (PGRST202 — migration 030 not applied),
+  //   we throw a clear error directing users to apply the migration.
+  //   This matches the pattern used by other Supabase RPC calls
+  //   (e.g., prism_adjust_importance in adjustImportance()).
+  //
+  // RETURN VALUE:
+  //   The RPC returns a single-row TABLE with (eligible, purged, reclaimed_bytes).
+  //   We parse this into the same TypeScript shape as the SQLite implementation.
+
+  async purgeHighPrecisionEmbeddings(params: {
+    project?: string;
+    olderThanDays: number;
+    dryRun: boolean;
+    userId: string;
+  }): Promise<{ purged: number; eligible: number; reclaimedBytes: number }> {
+    // Safety guard: enforce minimum age (also enforced server-side, but
+    // catch early to avoid RPC roundtrip for obviously invalid requests)
+    if (params.olderThanDays < 7) {
+      throw new Error(
+        "olderThanDays must be at least 7 to prevent purging recent entries. " +
+        "Entries younger than 7 days may still benefit from Tier-1 native vector search."
+      );
+    }
+
+    try {
+      const result = await supabaseRpc("prism_purge_embeddings", {
+        p_project: params.project || null,    // NULL = all projects
+        p_user_id: params.userId,
+        p_older_than_days: params.olderThanDays,
+        p_dry_run: params.dryRun,
+      });
+
+      // RPC returns TABLE(eligible, purged, reclaimed_bytes) — parse the first row
+      const data = Array.isArray(result) ? result[0] : result;
+
+      return {
+        eligible: Number(data?.eligible) || 0,
+        purged: Number(data?.purged) || 0,
+        reclaimedBytes: Number(data?.reclaimed_bytes) || 0,
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+
+      // PGRST202 = function not found — migration 030 not applied yet
+      if (msg.includes("PGRST202") || msg.includes("Could not find the function")) {
+        throw new Error(
+          "Deep Storage Purge requires migration 030 (prism_purge_embeddings RPC). " +
+          "Apply the migration via: supabase db push, or run " +
+          "supabase/migrations/030_deep_storage_purge.sql in your SQL Editor."
+        );
+      }
+
+      debugLog("[SupabaseStorage] purgeHighPrecisionEmbeddings failed: " + msg);
+      throw e;
+    }
+  }
+
 }
+

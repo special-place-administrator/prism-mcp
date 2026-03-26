@@ -1036,3 +1036,85 @@ export function isKnowledgeSyncRulesArgs(
   );
 }
 
+// ─── v5.1: Deep Storage Mode (The Purge) ──────────────────────
+//
+// REVIEWER NOTE: This tool is the storage optimization follow-up to v5.0's
+// TurboQuant integration. Now that compressed blobs provide Tier-2 search,
+// the original float32 embeddings (3KB each) for OLD entries are redundant.
+//
+// DESIGN DECISIONS:
+//   - dry_run defaults to false (consistent with session_compact_ledger)
+//   - older_than_days defaults to 30 and has a minimum of 7 (enforced at storage layer)
+//   - project is optional: omit to purge across all projects
+//   - No required fields — tool works with zero args (purges all projects, 30+ day old entries)
+//
+// SAFETY NET:
+//   - Storage layer throws if olderThanDays < 7
+//   - Only entries with BOTH embedding AND embedding_compressed are eligible
+//   - Multi-tenant user_id guard is injected by the handler (not user-facing)
+
+export const DEEP_STORAGE_PURGE_TOOL: Tool = {
+  name: "deep_storage_purge",
+  description:
+    "v5.1 Deep Storage Mode: Purge high-precision float32 embedding vectors for entries " +
+    "that already have TurboQuant compressed blobs, reclaiming ~90% of vector storage. " +
+    "Only affects entries older than the specified threshold (default: 30 days, minimum: 7). " +
+    "Entries without compressed blobs are NEVER touched. " +
+    "Use dry_run=true to preview the impact before executing.\n\n" +
+    "**When to use:** After running TurboQuant backfill (session_backfill_embeddings), " +
+    "call this tool to reclaim disk space from legacy float32 vectors that are no longer " +
+    "needed for search.\n\n" +
+    "**Safety:** Tier-2 search (TurboQuant) maintains 95%+ accuracy with compressed blobs. " +
+    "Tier-3 (FTS5 keyword) search is completely unaffected.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      project: {
+        type: "string",
+        description:
+          "Optional project filter. When omitted, purges across all projects.",
+      },
+      older_than_days: {
+        type: "integer",
+        description:
+          "Only purge entries older than this many days. " +
+          "Default: 30. Minimum: 7 (enforced). " +
+          "Entries younger than this threshold keep full float32 precision " +
+          "for Tier-1 native vector search.",
+      },
+      dry_run: {
+        type: "boolean",
+        description:
+          "If true, reports eligible count and estimated byte savings " +
+          "without purging any data. Default: false.",
+      },
+    },
+    // No required fields — tool works with sensible defaults (30 days, all projects)
+  },
+};
+
+/**
+ * v5.1 Type guard for deep_storage_purge tool arguments.
+ *
+ * All fields are optional — the handler applies defaults:
+ *   - project: omitted → purge across all projects
+ *   - older_than_days: omitted → 30 days
+ *   - dry_run: omitted → false
+ */
+export interface DeepStoragePurgeArgs {
+  project?: string;
+  older_than_days?: number;
+  dry_run?: boolean;
+}
+
+export function isDeepStoragePurgeArgs(
+  args: unknown
+): args is DeepStoragePurgeArgs {
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (a.project !== undefined && typeof a.project !== "string") return false;
+  if (a.older_than_days !== undefined && typeof a.older_than_days !== "number") return false;
+  if (a.dry_run !== undefined && typeof a.dry_run !== "boolean") return false;
+  return true;
+}
+

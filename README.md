@@ -24,7 +24,7 @@
 - [Claude Code Integration (Hooks)](#claude-code-integration-hooks)
 - [Gemini / Antigravity Integration](#gemini--antigravity-integration)
 - [Use Cases](#use-cases)
-- [Architecture](#architecture)
+- [Architecture](#architecture) | [Full Architecture Guide](docs/ARCHITECTURE.md) | [Self-Improving Agent Guide](docs/self-improving-agent.md)
 - [Tool Reference](#tool-reference)
 - [Agent Hivemind — Role Usage](#agent-hivemind--role-usage)
 - [LangChain / LangGraph Integration](#langchain--langgraph-integration)
@@ -726,76 +726,38 @@ session_view_image(project="my-app", image_id="8f2a1b3c")
 
 ---
 
-### 🔌 Pluggable LLM Adapters
-
-**Why:** Run fully local/air-gapped with Ollama, or switch providers without changing tool logic.
-
-**Setup:** Set in MCP config `env`:
-
-```json
-{
-  "env": {
-    "PRISM_LLM_PROVIDER": "ollama",
-    "PRISM_LLM_MODEL": "llama3.2",
-    "PRISM_LLM_BASE_URL": "http://localhost:11434"
-  }
-}
-```
-
-| Provider | Env Var | Notes |
-|----------|---------|-------|
-| `gemini` (default) | `GOOGLE_API_KEY` | Best for Morning Briefings |
-| `openai` | `OPENAI_API_KEY` | GPT-4o supports VLM |
-| `anthropic` | `ANTHROPIC_API_KEY` | Claude 3.5 supports VLM |
-| `ollama` | none | Full local/air-gapped mode |
-
-> 💡 **Ollama Performance Tip:** If your Ollama build includes TurboQuant KV-cache support, enable it for ~6× memory reduction and up to 8× faster inference on long contexts:
-> ```bash
-> OLLAMA_KV_CACHE_TYPE=turbo3 ollama serve
-> ```
-> Options: `turbo3` (3.25 bits/val, maximum compression) or `turbo4` (4.25 bits/val, balanced). See [RFC-001: Quantized Agentic Memory](docs/rfcs/001-turboquant-integration.md) for technical details.
-
----
-
-### 📦 GDPR Memory Export
-
-```
-session_export_memory(project="my-app", format="zip")
-```
-
-Outputs a ZIP containing:
-- `ledger.json` — all session entries
-- `handoffs.json` — all project state snapshots  
-- `knowledge.md` — graduated insights in Markdown
-- Sensitive fields (API keys, tokens) automatically redacted
-
----
-
 ## Architecture
+
+> **📖 Deep dive**: [Full Architecture Guide](docs/ARCHITECTURE.md) — TurboQuant math, Three-Tier search, storage optimization flow
+> **🤖 Tutorial**: [How to Build a Self-Improving Agent](docs/self-improving-agent.md) — corrections → behavioral memory → IDE rules
 
 ```mermaid
 graph TB
     Client["AI Client<br/>(Claude Desktop / Cursor / Windsurf)"]
-    LangChain["LangChain / LangGraph<br/>(Python Retrievers)"]
+    LangChain["LangChain / LangGraph<br/>(Python/TS Retrievers)"]
     MCP["Prism MCP Server<br/>(TypeScript)"]
     
     Client -- "MCP Protocol (stdio)" --> MCP
     LangChain -- "JSON-RPC via MCP Bridge" --> MCP
     
-    MCP --> Tracing["MemoryTrace Engine<br/>Latency + Strategy + Scoring"]
+    MCP --> Tracing["OTel Tracing<br/>v4.6 Observability"]
     MCP --> Dashboard["Mind Palace Dashboard<br/>localhost:3000"]
     MCP --> Brave["Brave Search API<br/>Web + Local + AI Answers"]
-    MCP --> Gemini["Google Gemini API<br/>Analysis + Briefings"]
+    MCP --> LLM["LLM Factory<br/>Gemini / OpenAI / Ollama"]
     MCP --> Sandbox["QuickJS Sandbox<br/>Code-Mode Templates"]
     MCP --> SyncBus["SyncBus<br/>Agent Telepathy"]
     MCP --> GDPR["GDPR Engine<br/>Soft/Hard Delete + Audit"]
     
     MCP --> Storage{"Storage Backend"}
-    Storage --> SQLite["SQLite (Local)<br/>libSQL + F32_BLOB vectors"]
+    Storage --> SQLite["SQLite (Local)<br/>libSQL + sqlite-vec"]
     Storage --> Supabase["Supabase (Cloud)<br/>PostgreSQL + pgvector"]
     
-    SQLite --> Ledger["session_ledger<br/>(+ deleted_at tombstoning)"]
-    SQLite --> Handoffs["session_handoffs"]
+    SQLite --> Ledger["session_ledger"]
+    Ledger --> T1["Tier 1: float32<br/>3,072B native search"]
+    T1 -- "v5.0 TurboQuant" --> T2["Tier 2: turbo4<br/>400B JS search"]
+    T1 -. "v5.1 Purge" .-> Null["NULL after 30d"]
+    
+    SQLite --> Handoffs["session_handoffs<br/>(OCC versioning)"]
     SQLite --> History["history_snapshots<br/>(Time Travel)"]
     SQLite --> Media["media vault<br/>(Visual Memory)"]
     
@@ -805,13 +767,16 @@ graph TB
     style Tracing fill:#D69E2E,color:#fff
     style Dashboard fill:#9F7AEA,color:#fff
     style Brave fill:#FB542B,color:#fff
-    style Gemini fill:#4285F4,color:#fff
+    style LLM fill:#4285F4,color:#fff
     style Sandbox fill:#805AD5,color:#fff
     style SyncBus fill:#ED64A6,color:#fff
     style GDPR fill:#E53E3E,color:#fff
     style Storage fill:#2D3748,color:#fff
     style SQLite fill:#38B2AC,color:#fff
     style Supabase fill:#3ECF8E,color:#fff
+    style T1 fill:#48BB78,color:#fff
+    style T2 fill:#E8B004,color:#000
+    style Null fill:#E53E3E,color:#fff
 ```
 
 ---
@@ -1593,7 +1558,6 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 │   │   ├── compactionHandler.ts         # Gemini-powered ledger compaction
 │   │   └── index.ts                     # Tool registration & re-exports
 │   └── utils/
-│   └── utils/
 │       ├── telemetry.ts                 # OTel singleton — NodeTracerProvider, BatchSpanProcessor, no-op mode
 │       ├── tracing.ts                   # MemoryTrace types + factory (Phase 1 — LLM explainability)
 │       ├── imageCaptioner.ts            # VLM auto-caption pipeline (v4.5) + worker.vlm_caption OTel span
@@ -1635,7 +1599,7 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 
 > **[View the full project board →](https://github.com/users/dcostenco/projects/1/views/1)** | **[Full ROADMAP.md →](ROADMAP.md)**
 
-### 🔬 v5.0 — Quantized Agentic Memory (In Progress)
+### ✅ v5.0 — Quantized Agentic Memory (Shipped!)
 
 | Feature | Description |
 |---|---|
@@ -1643,6 +1607,15 @@ See [`vertex-ai/`](vertex-ai/) for setup and benchmarks.
 | 📦 **~7× Embedding Compression** | 768-dim embeddings shrink from 3,072 bytes to ~400 bytes (4-bit) via variable bit-packing. |
 | 🔍 **Asymmetric Similarity** | Unbiased inner product estimator: query as float32 vs compressed blobs. No decompression needed. |
 | 🗄️ **Two-Tier Search** | FTS5 candidate filter → JS-side asymmetric scoring. Bypasses sqlite-vec float32 limitation. |
+
+### ✅ v5.1 — Deep Storage Mode (Shipped!)
+
+| Feature | Description |
+|---|---|
+| 🧬 **Deep Storage Purge** | Automated `deep_storage_purge` tool NULLs out redundant float32 embeddings for entries with TurboQuant compressed blobs, reclaiming ~90% of vector storage. |
+| 🛡️ **Safety Guards** | Minimum 7-day age threshold, dry-run preview mode, multi-tenant isolation, and compressed-blob-existence validation ensure zero data loss. |
+| 🗃️ **Supabase RPC** | `prism_purge_embeddings` Postgres function (migration 030) provides full backend parity with SQLite. Auto-applied via the v4.1 migration runner. |
+| 🧪 **303 Tests** | 8 new deep-storage test cases covering dry run, execute, safety guards, and idempotency — zero regressions across the full suite. |
 
 ### ✅ v4.6 — OpenTelemetry Observability (Shipped!)
 
@@ -1698,13 +1671,12 @@ See [v3.1.0](#whats-in-v310--memory-lifecycle-) and [v3.0.0](#whats-in-v300--age
 
 | Priority | Feature | Description |
 |----------|---------|-------------|
-| 🥇 | **Documentation & Architecture Guide** | Full README overhaul with architecture diagrams, "How to build a self-improving agent" walkthrough, and v4.x feature matrix. |
-| 🥈 | **Knowledge Graph Editor** | Visual graph in Mind Palace showing nodes for projects, agents, sessions, and graduated rules. |
+| ✅ | **Documentation & Architecture Guide** | [Architecture Guide](docs/ARCHITECTURE.md), [Self-Improving Agent Guide](docs/self-improving-agent.md), updated README diagram with v5.x vector tiers. |
+| ✅ | **Knowledge Graph Editor** | Interactive vis.js graph with click-to-filter, node stats, project/keyword/category visualization. |
 | 🥉 | **Autonomous Web Scholar** | Agent-driven learning pipeline using Brave Search + VLM to autonomously build project context while the developer sleeps. |
-| — | **Dashboard Auth** | Optional basic auth for remote Mind Palace access. |
-| — | **TypeScript LangGraph Examples** | Reference implementations alongside the existing Python agent. |
+| ✅ | **Dashboard Auth** | HTTP Basic Auth with session cookies, timing-safe comparison, styled login page. Set `PRISM_DASHBOARD_USER`/`PRISM_DASHBOARD_PASS`. |
+| ✅ | **TypeScript LangGraph Examples** | [Reference agent](examples/langgraph-ts/) with MCP client, memory retriever nodes, and session persistence. |
 | — | **CRDT Conflict Resolution** | Conflict-free types for concurrent multi-agent edits on the same handoff. |
-| — | **[Quantized Agentic Memory](docs/rfcs/001-turboquant-integration.md)** | TurboQuant-based embedding compression (~10× storage reduction). First MCP server with quantized vector memory. [RFC-001](docs/rfcs/001-turboquant-integration.md) |
 
 ---
 
