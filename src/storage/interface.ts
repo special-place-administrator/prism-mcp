@@ -48,6 +48,13 @@ export interface LedgerEntry {
   // Embedding (generated async after save)
   embedding?: string; // JSON-stringified number[]
 
+  // ─── v5.0: TurboQuant Compressed Embedding ──────────────────
+  // Stored alongside float32 embedding for backward compat.
+  // Asymmetric similarity search happens in JS-land (Phase 3).
+  embedding_compressed?: string;           // base64-encoded packed blob (~400 bytes)
+  embedding_format?: 'turbo3' | 'turbo4' | 'float32';  // quantization format
+  embedding_turbo_radius?: number;         // original vector magnitude (for cosine sim)
+
   // Compaction metadata
   is_rollup?: boolean;
   rollup_count?: number;

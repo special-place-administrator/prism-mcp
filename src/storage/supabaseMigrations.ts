@@ -109,7 +109,17 @@ export const MIGRATIONS: Migration[] = [
       $$;
     `,
   },
-  // Future migrations go here (version 29+)
+  {
+    version: 29,
+    name: "turboquant_compressed_embeddings",
+    sql: `
+      -- v5.0: TurboQuant Compressed Embedding columns
+      ALTER TABLE session_ledger ADD COLUMN IF NOT EXISTS embedding_compressed TEXT DEFAULT NULL;
+      ALTER TABLE session_ledger ADD COLUMN IF NOT EXISTS embedding_format TEXT DEFAULT NULL;
+      ALTER TABLE session_ledger ADD COLUMN IF NOT EXISTS embedding_turbo_radius REAL DEFAULT NULL;
+    `,
+  },
+  // Future migrations go here (version 30+)
 ];
 
 /**

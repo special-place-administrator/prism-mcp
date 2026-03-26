@@ -133,9 +133,28 @@ export async function sessionSaveLedgerHandler(args: unknown) {
     if (entryId) {
       getLLMProvider().generateEmbedding(embeddingText)
         .then(async (embedding) => {
-          await storage.patchLedger(entryId, {
+          // Build atomic patch — float32 + TurboQuant in ONE DB update
+          const patchData: Record<string, unknown> = {
             embedding: JSON.stringify(embedding),
-          });
+          };
+
+          // TurboQuant: compress alongside float32 (non-fatal)
+          try {
+            const { getDefaultCompressor, serialize } = await import("../utils/turboquant.js");
+            const compressor = getDefaultCompressor();
+            const compressed = compressor.compress(embedding);
+            const buf = serialize(compressed);
+
+            patchData.embedding_compressed = buf.toString("base64");
+            patchData.embedding_format = `turbo${compressor.bits}`;
+            patchData.embedding_turbo_radius = compressed.radius;
+            debugLog(`[session_save_ledger] TurboQuant compressed: ${buf.length} bytes (${(3072 / buf.length).toFixed(1)}× ratio)`);
+          } catch (turboErr: any) {
+            console.error(`[session_save_ledger] TurboQuant compression failed (non-fatal): ${turboErr.message}`);
+          }
+
+          // Single atomic DB update for all embedding data
+          await storage.patchLedger(entryId, patchData);
           debugLog(`[session_save_ledger] Embedding saved for entry ${entryId}`);
         })
         .catch((err) => {

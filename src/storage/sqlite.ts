@@ -385,6 +385,37 @@ export class SqliteStorage implements StorageBackend {
     await this.db.execute(
       `CREATE INDEX IF NOT EXISTS idx_ledger_importance ON session_ledger(importance DESC)`
     );
+
+    // ─── v5.0 Migration: TurboQuant Compressed Embeddings ─────
+    // Stores compressed embedding alongside float32 for backward compat.
+    // Uses base64 TEXT (not F32_BLOB) — asymmetric search runs in JS.
+
+    try {
+      await this.db.execute(
+        `ALTER TABLE session_ledger ADD COLUMN embedding_compressed TEXT DEFAULT NULL`
+      );
+      debugLog("[SqliteStorage] v5.0 migration: added embedding_compressed column");
+    } catch (e: any) {
+      if (!e.message?.includes("duplicate column name")) throw e;
+    }
+
+    try {
+      await this.db.execute(
+        `ALTER TABLE session_ledger ADD COLUMN embedding_format TEXT DEFAULT NULL`
+      );
+      debugLog("[SqliteStorage] v5.0 migration: added embedding_format column");
+    } catch (e: any) {
+      if (!e.message?.includes("duplicate column name")) throw e;
+    }
+
+    try {
+      await this.db.execute(
+        `ALTER TABLE session_ledger ADD COLUMN embedding_turbo_radius REAL DEFAULT NULL`
+      );
+      debugLog("[SqliteStorage] v5.0 migration: added embedding_turbo_radius column");
+    } catch (e: any) {
+      if (!e.message?.includes("duplicate column name")) throw e;
+    }
   }
 
   // ─── PostgREST Filter Parser ───────────────────────────────
@@ -517,8 +548,9 @@ export class SqliteStorage implements StorageBackend {
         (id, project, conversation_id, user_id, role, summary, todos, files_changed,
          decisions, keywords, is_rollup, rollup_count, title, agent_name,
          event_type, confidence_score, importance,
+         embedding_compressed, embedding_format, embedding_turbo_radius,
          created_at, session_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         id,
         entry.project,
@@ -537,6 +569,9 @@ export class SqliteStorage implements StorageBackend {
         entry.event_type || "session",   // v4.0: default to 'session'
         entry.confidence_score ?? null,   // v4.0: nullable
         entry.importance || 0,            // v4.0: default to 0
+        entry.embedding_compressed || null,        // v5.0: TurboQuant
+        entry.embedding_format || null,            // v5.0: turbo3/turbo4/float32
+        entry.embedding_turbo_radius ?? null,      // v5.0: original vector magnitude
         now,
         now,
       ],
