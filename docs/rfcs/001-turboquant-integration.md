@@ -107,12 +107,32 @@ assert(score > 0.99, "Compression must preserve >99% similarity");
 
 ## Phases
 
-| Phase | Scope | Effort |
+| Phase | Scope | Status |
 |---|---|---|
-| **0 — Docs** | Document `OLLAMA_KV_CACHE_TYPE=turbo3` in self-hosting README | ~1 hour |
-| **1 — TurboPalace** | Standalone `src/utils/turboquant.ts` with FWHT + PolarQuant + QJL | 2-3 sessions |
-| **2 — Storage** | Add `embedding_format` + `embedding_turbo_meta` to schema + migration | 1 session |
-| **3 — Search** | Two-Tier search in `searchMemory()` with asymmetric scoring | 1 session |
+| **0 — Docs** | Document `OLLAMA_KV_CACHE_TYPE=turbo3` in README | ✅ Complete |
+| **1 — Math Core** | `src/utils/turboquant.ts` — QR + Lloyd-Max + QJL + bit-packing | ✅ Complete |
+| **2 — Storage** | `embedding_compressed` + `embedding_format` + `embedding_turbo_radius` | ✅ Complete |
+| **3 — Search** | Two-Tier search with Tier-2 JS-land asymmetric fallback | ✅ Complete |
+
+## Future Work (v5.1+)
+
+### Deep Storage Mode
+Allow users to reclaim ~90% of vector disk space by purging `float32` embeddings
+for entries older than a configurable threshold, relying on Tier-2 compressed search:
+
+```sql
+UPDATE session_ledger
+SET embedding = NULL
+WHERE created_at < datetime('now', '-30 days')
+  AND embedding_compressed IS NOT NULL;
+```
+
+**Implementation:** Add a `deep_storage_days` parameter to `knowledge_set_retention`,
+or expose as a toggle in the Mind Palace dashboard settings.
+
+### Knowledge Graph Editor
+Visualize quantized memory clusters. With 100k+ entries now feasible on a laptop,
+a graph-based navigation UI becomes essential for exploring dense session history.
 
 ## References
 
