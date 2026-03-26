@@ -674,6 +674,12 @@ session_view_image(project="my-app", image_id="8f2a1b3c")
 | `anthropic` | `ANTHROPIC_API_KEY` | Claude 3.5 supports VLM |
 | `ollama` | none | Full local/air-gapped mode |
 
+> 💡 **Ollama Performance Tip:** If your Ollama build includes TurboQuant KV-cache support, enable it for ~6× memory reduction and up to 8× faster inference on long contexts:
+> ```bash
+> OLLAMA_KV_CACHE_TYPE=turbo3 ollama serve
+> ```
+> Options: `turbo3` (3.25 bits/val, maximum compression) or `turbo4` (4.25 bits/val, balanced). See [RFC-001: Quantized Agentic Memory](docs/rfcs/001-turboquant-integration.md) for technical details.
+
 ---
 
 ### 📦 GDPR Memory Export
@@ -1614,6 +1620,7 @@ See [v3.1.0](#whats-in-v310--memory-lifecycle-) and [v3.0.0](#whats-in-v300--age
 | — | **Dashboard Auth** | Optional basic auth for remote Mind Palace access. |
 | — | **TypeScript LangGraph Examples** | Reference implementations alongside the existing Python agent. |
 | — | **CRDT Conflict Resolution** | Conflict-free types for concurrent multi-agent edits on the same handoff. |
+| — | **[Quantized Agentic Memory](docs/rfcs/001-turboquant-integration.md)** | TurboQuant-based embedding compression (~10× storage reduction). First MCP server with quantized vector memory. [RFC-001](docs/rfcs/001-turboquant-integration.md) |
 
 ---
 
