@@ -200,7 +200,8 @@ Add to your Continue `config.json` or Cline MCP settings:
 
 </details>
 
-<a name="migration"></a>
+#### Migration
+
 <details>
 <summary><strong>Migrating Existing History (Claude, Gemini, OpenAI)</strong></summary>
 
