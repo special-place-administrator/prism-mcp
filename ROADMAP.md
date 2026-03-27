@@ -131,7 +131,7 @@ With v5.2 shipped, Prism has crossed from retrieval into **cognition**:
 - **Zero Cold-Start** — Universal Migration imports years of Claude/Gemini/ChatGPT history on day one.
 - **Scale** — TurboQuant 10× compression + Deep Storage Purge. Decades of session history on a laptop.
 - **Quality** — Interactive Knowledge Graph Editor + Behavioral Memory that learns from mistakes.
-- **Reliability** — 307+ passing tests across 14 suites. Hardened auto-load hooks for Claude Code & Gemini.
+- **Reliability** — 352 passing tests across 15 suites. Hardened auto-load hooks for Claude Code & Gemini.
 - **Observability** — OpenTelemetry span waterfalls for every tool call, LLM hop, and background worker.
 - **Multimodal** — VLM auto-captioning turns screenshots into semantically searchable memory.
 - **Security** — SQL injection prevention via column allowlists on all dynamic query paths.
