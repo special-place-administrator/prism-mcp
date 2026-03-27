@@ -205,7 +205,7 @@ Add to your Continue `config.json` or Cline MCP settings:
 <details>
 <summary><strong>Migrating Existing History (Claude, Gemini, OpenAI)</strong></summary>
 
-Prism can ingest months of historical sessions from other tools to give your Mind Palace a massive head start.
+Prism can ingest months of historical sessions from other tools to give your Mind Palace a massive head start. Import via the **CLI** or directly from the [Mind Palace Dashboard](#-mind-palace-dashboard) Import tab (file picker + manual path + dry-run toggle).
 
 ### Supported Formats
 * **Claude Code** (`.jsonl` logs) — Automatically handles streaming chunk deduplication and `requestId` normalization.
@@ -213,7 +213,8 @@ Prism can ingest months of historical sessions from other tools to give your Min
 * **OpenAI** (JSON chat completion history) — Normalizes disparate tool-call structures into the unified Ledger schema.
 
 ### How to Run
-Use the `universal-import` command:
+
+**Option 1 — CLI:**
 
 ```bash
 # Ingest Claude Code history
@@ -223,8 +224,11 @@ npx -y prism-mcp-server universal-import --format claude --path ~/path/to/claude
 npx -y prism-mcp-server universal-import --format gemini --path ./gemini_history.json --dry-run
 ```
 
+**Option 2 — Dashboard:** Open `localhost:3000`, navigate to the **Import** tab, select the format and file, and click Import. Supports dry-run preview. See the [dashboard screenshot](#-mind-palace-dashboard) above.
+
 ### Key Features
 * **OOM-Safe Streaming:** Processes massive log files line-by-line using `stream-json`.
+* **Idempotent Dedup:** Content-hash prevents duplicate imports on re-run (`skipCount` reported).
 * **Chronological Integrity:** Uses timestamp fallbacks and `requestId` sorting to ensure your memory timeline is accurate.
 * **Smart Context Mapping:** Extracts `cwd`, `gitBranch`, and tool usage patterns into searchable metadata.
 
