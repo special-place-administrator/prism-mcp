@@ -113,17 +113,15 @@ v3.0: Role-scoped memory, agent registration/heartbeat, Telepathy (real-time cro
 
 ## 🗺️ Next on the Horizon
 
-### Priority 1 — Documentation & Architecture Guide 📚
-*(Recommended next session)*
+### 🥇 Priority 1 — v5.2 Scoping
 
-Needed:
-- "How to build a self-improving agent with Prism" canonical guide
-- Updated architecture diagrams (VLM pipeline, OTel waterfall, TurboQuant tiers)
-- Quick Start video/walkthrough
+| Feature | Description |
+|---------|-------------|
+| 🔄 **CRDT Handoff Merging** | Conflict-free types for concurrent multi-agent edits on the same handoff state. |
+| ⏰ **Background Purge Scheduler** | Automated cron-style scheduling for `deep_storage_purge` — reclaim storage without manual tool calls. |
+| 📱 **Mind Palace Mobile PWA** | Responsive dashboard UI for tablet/phone with offline-first IndexedDB cache. |
 
-
-
-### Priority 3 — Autonomous Web Scholar 🌐
+### 🥉 Priority 3 — Autonomous Web Scholar 🌐
 
 Agent-driven learning pipeline:
 1. Brave Search + Firecrawl scrape for a given topic
@@ -138,8 +136,6 @@ Agent-driven learning pipeline:
 
 | Feature | Notes |
 |---------|-------|
-| Dashboard Auth | Basic auth/token for remote Mind Palace access |
-| TypeScript LangGraph Examples | Reference implementation alongside Python agent |
-| CRDT Conflict Resolution | Conflict-free types for concurrent multi-agent handoff edits |
 | Supabase RPC Soft-Delete Filtering | Server-side GDPR filtering at the RPC layer |
-| Mind Palace Mobile PWA | Responsive dashboard UI for tablet/phone |
+| Prism CLI | Standalone CLI for backup, export, and health check without MCP |
+| Plugin System | Third-party tool registration via MCP tool composition |
