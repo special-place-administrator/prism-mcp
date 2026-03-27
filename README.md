@@ -92,12 +92,12 @@ Soft/hard delete (Art. 17), full ZIP export (Art. 20), API key redaction, per-pr
 
 - 🧠 **Cognitive Memory** — Ebbinghaus importance decay computes `effective_importance = base × 0.95^days` at retrieval time. Frequently accessed memories stay prominent; neglected ones naturally fade. Tracks `last_accessed_at` per entry.
 - 🎯 **Context-Weighted Retrieval** — New `context_boost` parameter on `session_search_memory` prepends your active project's context to the query before embedding, biasing results toward what matters right now.
-- 🔄 **Universal History Migration** — Import years of Claude Code, Gemini, and ChatGPT sessions on day one. Strategy Pattern adapters with OOM-safe streaming, content-hash dedup, and `--dry-run` support.
+- 🔄 **[Universal History Migration](#migrating-existing-history-claude-gemini-openai)** — Import years of Claude Code, Gemini, and ChatGPT sessions on day one. Strategy Pattern adapters with OOM-safe streaming, content-hash dedup, and `--dry-run` support. Also available via the [Dashboard Import UI](#-mind-palace-dashboard).
 - 🧹 **Smart Consolidation** — Enhanced compaction extracts recurring principles alongside summaries for richer rollups.
 - 🛡️ **SQL Injection Prevention** — 17-column allowlist on `patchLedger()` hardens all dynamic SQL paths.
 - 🧪 **352 Tests** — Zero regressions across 15 suites.
 
-> [Full CHANGELOG →](CHANGELOG.md)
+> [Full CHANGELOG →](CHANGELOG.md) · [Architecture Deep Dive →](docs/ARCHITECTURE.md)
 
 ---
 
@@ -716,6 +716,18 @@ See [CHANGELOG.md](CHANGELOG.md) for full details.
 - ⏰ Background Purge Scheduler — automated storage reclamation
 - 📱 Mind Palace Mobile PWA — offline-first responsive dashboard
 - 🌐 Autonomous Web Scholar — agent-driven research pipeline
+
+---
+
+## ⚠️ Limitations
+
+- **LLM-dependent features require an API key.** Semantic search, Morning Briefings, auto-compaction, and VLM captioning need a `GOOGLE_API_KEY` (Gemini) or equivalent provider key. Without one, Prism falls back to keyword-only search (FTS5).
+- **Auto-load is model-dependent.** Session auto-loading relies on the LLM following system prompt instructions. Some models (especially Gemini) intermittently hallucinate that MCP tools are "unavailable." See the [Gemini/Antigravity setup guide](#gemini--antigravity--auto-load-rules-battle-tested) for workarounds.
+- **No real-time sync without Supabase.** Local SQLite mode is single-machine only. Multi-device or team sync requires a Supabase backend.
+- **Embedding quality varies by provider.** Gemini `text-embedding-004` and OpenAI `text-embedding-3-small` produce high-quality 768-dim vectors. Ollama embeddings (e.g., `nomic-embed-text`) are usable but may reduce retrieval accuracy.
+- **Dashboard is HTTP-only.** The Mind Palace dashboard at `localhost:3000` does not support HTTPS. For remote access, use a reverse proxy (nginx/Caddy) or SSH tunnel. Basic auth is available via `PRISM_DASHBOARD_USER` / `PRISM_DASHBOARD_PASS`.
+- **Migration is one-way.** Universal History Migration imports sessions *into* Prism but does not export back to Claude/Gemini/OpenAI formats. Use `session_export_memory` for portable JSON/Markdown export.
+- **No Windows CI testing.** Prism is developed and tested on macOS/Linux. It should work on Windows via Node.js, but edge cases (file paths, PID locks) may surface.
 
 ---
 

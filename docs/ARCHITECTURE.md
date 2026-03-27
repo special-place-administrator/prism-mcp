@@ -2,7 +2,7 @@
 
 > **A local-first, self-improving memory engine for AI agents.**
 > 
-> Prism MCP provides persistent state, semantic search, multimodal capabilities, and observability for AI agents. This document details the architectural decisions, math, and data flows powering Prism v5.1+.
+> Prism MCP provides persistent state, semantic search, multimodal capabilities, and observability for AI agents. This document details the architectural decisions, math, and data flows powering Prism v5.2+.
 
 ---
 
@@ -12,6 +12,8 @@
 3. [The VLM Multimodal Pipeline](#3-the-vlm-multimodal-pipeline)
 4. [Telemetry & Observability (OTel)](#4-telemetry--observability-otel)
 5. [The Knowledge Graph Engine](#5-the-knowledge-graph-engine)
+6. [Cognitive Memory (v5.2)](#6-cognitive-memory-v52)
+7. [Universal History Migration (v5.2)](#7-universal-history-migration-v52)
 
 ---
 
@@ -103,4 +105,60 @@ In the **Mind Palace Dashboard**, this data is hydrated into a force-directed ne
 *   **Surgical DB Patching**: Renaming or deleting a node fires a `POST /api/graph/node` request. The backend uses PostgREST array containment operators (`cs.{keyword}`) to find all affected ledger entries, securely and idempotently patching the JSON/Text arrays across the entire database.
 
 ---
-*Prism MCP Architecture Guide — Last Updated: v5.1*
+
+## 6. Cognitive Memory (v5.2)
+
+Prism v5.2 introduces neuroscience-inspired memory dynamics that make retrieval results feel more human.
+
+### Ebbinghaus Importance Decay
+
+Inspired by the Ebbinghaus forgetting curve, every memory's importance now *decays* over time unless reinforced:
+
+```
+effective_importance = base_importance × 0.95^(days_since_last_access)
+```
+
+*   `base_importance` — The raw importance score (0–10) set at creation or via upvote/downvote.
+*   `last_accessed_at` — Updated every time a memory surfaces in search results.
+*   **Reinforcement loop**: Memories that keep appearing stay important. Neglected ones naturally fade, reducing noise without manual pruning.
+
+The decay is computed *at retrieval time* — no cron jobs, no background mutation. The stored `base_importance` never changes; only the effective score does.
+
+### Context-Weighted Retrieval
+
+The `context_boost` parameter on `session_search_memory` prepends the active project's name and recent context to the embedding query before vectorization. This biases results toward the current working context without requiring explicit project filters.
+
+```
+query_text = project_context + " " + user_query
+embedding  = embed(query_text)  // naturally weighted
+```
+
+---
+
+## 7. Universal History Migration (v5.2)
+
+Prism can ingest years of session history from other AI tools to eliminate the "cold start" problem.
+
+### Strategy Pattern Architecture
+
+Each source format has a dedicated adapter implementing the `MigrationAdapter` interface:
+
+*   **ClaudeAdapter** — Parses `.jsonl` streaming logs. Handles `requestId` normalization and groups `human`/`assistant` turn pairs into conversations using a 30-minute gap heuristic.
+*   **GeminiAdapter** — Streams JSON arrays via `stream-json` for OOM-safe processing of 100MB+ exports.
+*   **OpenAIAdapter** — Normalizes chat completion history with tool-call structures into the unified Ledger schema.
+
+### Deduplication
+
+Every imported turn is hashed using `SHA-256(project + timestamp + content.slice(0, 200))`. The hash is stored in the `content_hash` column. On re-import, existing hashes are skipped (idempotent), reported as `skipCount`.
+
+### Concurrency Control
+
+Imports use `p-limit(5)` to cap concurrent database writes, preventing SQLite WAL contention on large imports (10,000+ turns).
+
+### Entry Points
+
+1.  **CLI**: `npx prism-mcp-server universal-import --format claude --path ./log.jsonl --project my-project`
+2.  **Dashboard**: File picker + manual path input + dry-run toggle on the Import tab.
+
+---
+*Prism MCP Architecture Guide — Last Updated: v5.2*
