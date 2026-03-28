@@ -310,7 +310,7 @@ if __name__ == "__main__":
 
 </details>
 
-<details>
+<details id="antigravity-auto-load">
 <summary><strong>Gemini / Antigravity — Three-Layer Auto-Load (Battle-Tested ✅)</strong></summary>
 
 Gemini-based agents (including Google's Antigravity IDE) use a **three-layer architecture** for reliable auto-load, proven over **14+ iterations** of prompt engineering (March 2026).
@@ -715,10 +715,12 @@ Prism is evolving from smart session logging toward a **cognitive memory archite
 
 ## Version History
 
+- **v5.2** — Cognitive Memory (Ebbinghaus decay, context-weighted retrieval), Universal History Migration, Smart Consolidation, three-layer Antigravity auto-load + server-side fallback
+- **v5.1** — Knowledge Graph Editor, Deep Storage purge
+
 <details>
 <summary><strong>Previous releases (v3.0 — v5.0)</strong></summary>
 
-- **v5.1** — Knowledge Graph Editor, Deep Storage purge
 - **v5.0** — TurboQuant 10× embedding compression, three-tier search architecture
 - **v4.6** — OpenTelemetry distributed tracing (Jaeger, Grafana)
 - **v4.5** — VLM multimodal memory + GDPR Art. 20 ZIP export
@@ -751,7 +753,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full details.
 ## ⚠️ Limitations
 
 - **LLM-dependent features require an API key.** Semantic search, Morning Briefings, auto-compaction, and VLM captioning need a `GOOGLE_API_KEY` (Gemini) or equivalent provider key. Without one, Prism falls back to keyword-only search (FTS5).
-- **Auto-load is model-dependent.** Session auto-loading relies on the LLM following system prompt instructions. Gemini/Antigravity uses a [three-layer architecture](#gemini--antigravity--three-layer-auto-load-battle-tested-) (User Rules + AGENTS.md + Startup Skill) with a v5.2.1 server-side fallback that auto-pushes context if the model doesn't comply within 10 seconds.
+- **Auto-load is model-dependent.** Session auto-loading relies on the LLM following system prompt instructions. Gemini/Antigravity uses a [three-layer architecture](#antigravity-auto-load) (User Rules + AGENTS.md + Startup Skill) with a v5.2.1 server-side fallback that auto-pushes context if the model doesn't comply within 10 seconds.
 - **No real-time sync without Supabase.** Local SQLite mode is single-machine only. Multi-device or team sync requires a Supabase backend.
 - **Embedding quality varies by provider.** Gemini `text-embedding-004` and OpenAI `text-embedding-3-small` produce high-quality 768-dim vectors. Ollama embeddings (e.g., `nomic-embed-text`) are usable but may reduce retrieval accuracy.
 - **Dashboard is HTTP-only.** The Mind Palace dashboard at `localhost:3000` does not support HTTPS. For remote access, use a reverse proxy (nginx/Caddy) or SSH tunnel. Basic auth is available via `PRISM_DASHBOARD_USER` / `PRISM_DASHBOARD_PASS`.
