@@ -39,7 +39,7 @@ export async function searchYahooFree(query: string, limit: number = 5): Promise
     const results: FreeSearchResult[] = [];
 
     $('.algo').each((_, elem) => {
-        if (results.length >= limit) return;
+        if (results.length >= limit) return false;
 
         const rawUrl = $(elem).find('a').attr('href') || '';
         let url = rawUrl;

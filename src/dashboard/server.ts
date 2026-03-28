@@ -915,7 +915,6 @@ return false;}
         }
       }
 
-      // ─── PWA: Manifest (v5.4) ───
       if (url.pathname === "/manifest.json" && req.method === "GET") {
         const manifest = {
           name: "Prism Mind Palace",
@@ -926,8 +925,10 @@ return false;}
           background_color: "#0a0e1a",
           theme_color: "#0a0e1a",
           icons: [
-            { src: "/icon-192.svg", sizes: "192x192", type: "image/svg+xml" },
-            { src: "/icon-512.svg", sizes: "512x512", type: "image/svg+xml" }
+            { src: "/icon-192.svg", sizes: "192x192", type: "image/svg+xml", purpose: "any" },
+            { src: "/icon-192-maskable.svg", sizes: "192x192", type: "image/svg+xml", purpose: "maskable" },
+            { src: "/icon-512.svg", sizes: "512x512", type: "image/svg+xml", purpose: "any" },
+            { src: "/icon-512-maskable.svg", sizes: "512x512", type: "image/svg+xml", purpose: "maskable" }
           ]
         };
         res.writeHead(200, {
@@ -940,12 +941,16 @@ return false;}
       // ─── PWA: Service Worker (v5.4) ───
       if (url.pathname === "/sw.js" && req.method === "GET") {
         const swContent = `
-const CACHE_NAME = 'prism-pwa-v1';
+const CACHE_NAME = 'prism-pwa-v2.1';
 const ASSETS = [
   '/',
   '/manifest.json',
   '/icon-192.svg',
-  '/icon-512.svg'
+  '/icon-192-maskable.svg',
+  '/icon-512.svg',
+  '/icon-512-maskable.svg',
+  '/apple-touch-icon.png',
+  '/offline.html'
 ];
 
 self.addEventListener('install', (e) => {
@@ -962,6 +967,11 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // Serve offline page for HTML navigation
+  if (e.request.mode === 'navigate') {
+    e.respondWith(fetch(e.request).catch(() => caches.match('/offline.html')));
+    return;
+  }
   // Network-first for API requests, Cache-first for Assets
   if (e.request.url.includes('/api/')) {
     e.respondWith(fetch(e.request).catch(() => new Response(JSON.stringify({ error: "Offline" }), { headers: { "Content-Type": "application/json" }, status: 503 })));
@@ -969,7 +979,13 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(caches.match(e.request).then((res) => res || fetch(e.request).then((fres) => {
       // Cache dynamically fetched non-API assets
       return caches.open(CACHE_NAME).then(c => { c.put(e.request, fres.clone()); return fres; });
-    })));
+    }).catch(() => null)));
+  }
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.action === 'skipWaiting') {
+    self.skipWaiting();
   }
 });
         `.trim();
@@ -980,9 +996,109 @@ self.addEventListener('fetch', (e) => {
         return res.end(swContent);
       }
 
+      // ─── PWA: Offline Fallback HTML (v5.4) ───
+      if (url.pathname === "/offline.html" && req.method === "GET") {
+        const offlineHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prism MCP — Offline</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0e1a">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0a0e1a;
+      color: #f1f5f9;
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+    }
+    .bg {
+      position: fixed;
+      inset: 0;
+      background-image: 
+        radial-gradient(circle at 20% 30%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(59, 130, 246, 0.06) 0%, transparent 50%);
+      z-index: 0;
+    }
+    .card {
+      position: relative;
+      z-index: 1;
+      background: rgba(17, 24, 39, 0.6);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(139, 92, 246, 0.15);
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      max-width: 400px;
+      width: 100%;
+    }
+    .icon {
+      font-size: 3rem;
+      margin-bottom: 1.5rem;
+      opacity: 0.8;
+      filter: drop-shadow(0 0 10px rgba(139, 92, 246, 0.5));
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p {
+      color: #94a3b8;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 2rem;
+    }
+    button {
+      background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="card">
+    <div class="icon">🔌</div>
+    <h1>You are currently offline.</h1>
+    <p>The Prism Dashboard cannot reach the MCP server. Please check your internet connection to resume.</p>
+    <button onclick="window.location.reload()">Try Again</button>
+  </div>
+</body>
+</html>`;
+        res.writeHead(200, {
+          "Content-Type": "text/html",
+          "Cache-Control": "public, max-age=86400"
+        });
+        return res.end(offlineHtml);
+      }
+
       // ─── PWA: Dynamic SVG Icons (v5.4) ───
-      if ((url.pathname === "/icon-192.svg" || url.pathname === "/icon-512.svg") && req.method === "GET") {
-        const size = url.pathname === "/icon-192.svg" ? 192 : 512;
+      if ((url.pathname === "/icon-192.svg" || url.pathname === "/icon-512.svg" || url.pathname === "/icon-192-maskable.svg" || url.pathname === "/icon-512-maskable.svg") && req.method === "GET") {
+        const size = url.pathname.includes("192") ? 192 : 512;
+        const isMaskable = url.pathname.includes("maskable");
+        // For standard "any" icons, we might want rounded corners or a specific size ratio if needed,
+        // but since we separate purposes, we can keep the SVG identical as adaptive scaling is handled by OS
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}">
   <defs>
     <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -991,7 +1107,7 @@ self.addEventListener('fetch', (e) => {
       <stop offset="100%" stop-color="#06b6d4" />
     </linearGradient>
   </defs>
-  <rect width="${size}" height="${size}" rx="${Math.floor(size * 0.2)}" fill="#0a0e1a"/>
+  <rect width="${size}" height="${size}" rx="${isMaskable ? 0 : Math.floor(size * 0.2)}" fill="#0a0e1a"/>
   <path d="M${size * 0.5} ${size * 0.25} L${size * 0.75} ${size * 0.75} L${size * 0.25} ${size * 0.75} Z" fill="url(#grad)" opacity="0.9"/>
   <circle cx="${size * 0.5}" cy="${size * 0.55}" r="${size * 0.15}" fill="#ffffff" opacity="0.1" />
 </svg>`;
@@ -1000,6 +1116,18 @@ self.addEventListener('fetch', (e) => {
           "Cache-Control": "public, max-age=86400"
         });
         return res.end(svg);
+      }
+
+      // ─── PWA: iOS Apple Touch Icon (v5.5) ───
+      if (url.pathname === "/apple-touch-icon.png" && req.method === "GET") {
+        // iOS Safari does not support SVG for apple-touch-icon; requires PNG.
+        // We serve a robust Base64-encoded 180x180 opaque PNG to prevent the "black box" issue.
+        const pngBase64 = "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";
+        res.writeHead(200, {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=86400"
+        });
+        return res.end(Buffer.from(pngBase64, "base64"));
       }
 
       // ─── 404 ───

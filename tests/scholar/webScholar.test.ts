@@ -62,6 +62,7 @@ const { mockConfig, mockStorage, mockFetch } = vi.hoisted(() => {
       success: true,
       data: { markdown: "# Test Article\n\nSome content about AI." },
     }),
+    text: vi.fn().mockResolvedValue("<html><body></body></html>"),
   });
 
   return { mockConfig, mockStorage, mockFetch };

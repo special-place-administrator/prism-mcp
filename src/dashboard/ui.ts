@@ -24,7 +24,7 @@ export function renderDashboardHTML(version: string): string {
   <!-- PWA Metadata -->
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0a0e1a">
-  <link rel="apple-touch-icon" href="/icon-192.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <!-- Vis.js for Neural Graph (v2.3.0) -->
@@ -2416,8 +2416,33 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
       window.addEventListener('load', function() {
         navigator.serviceWorker.register('/sw.js').then(function(reg) {
           console.log('[Dashboard] Service Worker registered with scope:', reg.scope);
+          
+          reg.addEventListener('updatefound', function() {
+            var newWorker = reg.installing;
+            newWorker.addEventListener('statechange', function() {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                var toast = document.createElement('div');
+                toast.style.cssText = 'position:fixed;bottom:2rem;right:2rem;background:var(--bg-glass);backdrop-filter:blur(12px);border:1px solid var(--border-glass);padding:1rem 1.5rem;border-radius:12px;display:flex;align-items:center;gap:1.5rem;z-index:9999;box-shadow:0 10px 30px rgba(0,0,0,0.5);transform:translateY(0);transition:transform 0.3s, opacity 0.3s;';
+                toast.innerHTML = '<div><p style="font-weight:600;margin-bottom:0.25rem;color:var(--text-primary);">Update Available</p><p style="color:var(--text-secondary);font-size:0.85rem;">A new version of Prism is ready.</p></div><button style="background:linear-gradient(135deg, var(--accent-purple), var(--accent-blue));color:white;border:none;padding:0.5rem 1rem;border-radius:6px;cursor:pointer;font-weight:600;">Refresh</button>';
+                
+                toast.querySelector('button').addEventListener('click', function() {
+                  newWorker.postMessage({ action: 'skipWaiting' });
+                  toast.style.opacity = '0';
+                });
+                document.body.appendChild(toast);
+              }
+            });
+          });
         }).catch(function(err) {
           console.error('[Dashboard] Service Worker registration failed:', err);
+        });
+
+        var refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function() {
+          if (!refreshing) {
+            refreshing = true;
+            window.location.reload();
+          }
         });
       });
     }
