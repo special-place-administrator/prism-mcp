@@ -267,6 +267,14 @@ const activeSubscriptions = new Set<string>();
 let storageReady: Promise<void> | null = null;
 let storageIsReady = false;
 
+// ─── v5.2.1: Deferred Auto-Push Tracking ─────────────────────
+// Tracks whether any client has already called session_load_context.
+// Used by the deferred auto-push to skip redundant context injection.
+// This ensures Claude CLI (which calls the tool via its hook within
+// seconds) is never affected, while Antigravity gets a fallback push
+// when the model fails to comply with auto-load instructions.
+let contextLoadedByClient = false;
+
 /**
  * Notifies subscribed clients that a resource has changed.
  *
@@ -737,6 +745,7 @@ export function createServer() {
 
           case "session_load_context":
             if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
+            contextLoadedByClient = true;  // v5.2.1: suppress deferred auto-push
             result = await sessionLoadContextHandler(args); break;
 
           case "knowledge_search":
@@ -1002,18 +1011,100 @@ export async function startServer() {
       console.error(`[Prism] Storage pre-warm failed (non-fatal): ${err}`);
     });
 
-    // ─── v4.1: Auto-Load is handled via dynamic tool descriptions ──
+    // ─── v4.1: Auto-Load via dynamic tool descriptions ──────────
     // The session_load_context tool description is dynamically modified
     // in createServer() → buildSessionMemoryTools() to include the
-    // auto-load projects list. This is the ONLY universally reliable
-    // mechanism — tool descriptions are surfaced by ALL MCP clients.
+    // auto-load projects list. Tool descriptions are surfaced by ALL
+    // MCP clients — this is the primary mechanism.
     //
-    // Previous approaches that FAILED:
-    //   - sendLoggingMessage: goes to debug logs, not AI conversation
-    //   - instructions field: not supported by Claude Code or Claude CLI
+    // ─── v5.2.1: Deferred Auto-Push (fallback for non-compliant models) ──
+    // After storage warms up, wait AUTOLOAD_PUSH_DELAY_MS. If the client
+    // (model) hasn't called session_load_context by then, push context via
+    // sendLoggingMessage as a last resort. This is a FALLBACK — it's not
+    // guaranteed to be surfaced by all clients, but it's better than nothing.
     //
-    // No runtime code needed here — the instruction is baked into the
-    // tool schema returned by ListTools.
+    // Why 10 seconds? Claude CLI always calls the tool within 2-3 seconds
+    // via its SessionStart hook. Antigravity models that comply also call it
+    // within 5 seconds. 10s gives ample time for well-behaved clients.
+    const AUTOLOAD_PUSH_DELAY_MS = 10_000;
+
+    // Read autoload projects from dashboard config (same source as createServer)
+    const pushAutoloadList = getSettingSync("autoload_projects", "")
+      .split(",").map(p => p.trim()).filter(Boolean);
+
+    if (pushAutoloadList.length > 0) {
+      // Wait for storage, then schedule the deferred push
+      storageReady?.then(async () => {
+        // Wait for the delay period to give the model a chance to call the tool
+        await new Promise(r => setTimeout(r, AUTOLOAD_PUSH_DELAY_MS));
+
+        // If the client already called session_load_context, skip the push
+        if (contextLoadedByClient) {
+          console.error(`[Prism] Auto-push skipped — client already loaded context`);
+          return;
+        }
+
+        console.error(`[Prism] Auto-push triggered — model did not call session_load_context within ${AUTOLOAD_PUSH_DELAY_MS / 1000}s`);
+
+        // Load and push context for each autoload project
+        try {
+          const storage = await getStorage();
+          const defaultLevel = getSettingSync("default_context_depth", "standard");
+
+          for (const project of pushAutoloadList) {
+            try {
+              const data = await storage.loadContext(project, defaultLevel, PRISM_USER_ID);
+              if (!data) {
+                server.sendLoggingMessage({
+                  level: "info",
+                  data: `[Prism Auto-Push] No context found for project "${project}". Starting fresh.`,
+                });
+                continue;
+              }
+
+              // Format context identically to sessionLoadContextHandler
+              const d = data as Record<string, any>;
+              let ctx = `📋 [AUTO-PUSH] Session context for "${project}" (${defaultLevel}):\n\n`;
+              if (d.last_summary) ctx += `📝 Last Summary: ${d.last_summary}\n`;
+              if (d.active_branch) ctx += `🌿 Active Branch: ${d.active_branch}\n`;
+              if (d.key_context) ctx += `💡 Key Context: ${d.key_context}\n`;
+              if (d.pending_todo?.length) {
+                ctx += `\n✅ Open TODOs:\n` + d.pending_todo.map((t: string) => `  - ${t}`).join("\n") + `\n`;
+              }
+              if (d.keywords?.length) {
+                ctx += `\n🔑 Keywords: ${d.keywords.join(", ")}\n`;
+              }
+              if (d.recent_sessions?.length) {
+                ctx += `\n⏳ Recent Sessions:\n` + d.recent_sessions.map((s: any) => `  [${s.session_date?.split("T")[0]}] ${s.summary}`).join("\n") + `\n`;
+              }
+
+              // Agent identity
+              const agentName = getSettingSync("agent_name", "");
+              const defaultRole = getSettingSync("default_role", "");
+              if (agentName || defaultRole) {
+                ctx += `\n👤 Agent: ${defaultRole || "global"} — ${agentName || "Agent"}`;
+              }
+
+              const version = d.version;
+              if (version) {
+                ctx += `\n🔑 Session version: ${version}. Pass expected_version: ${version} when saving handoff.`;
+              }
+
+              server.sendLoggingMessage({
+                level: "info",
+                data: ctx,
+              });
+
+              console.error(`[Prism] Auto-pushed context for "${project}" (${defaultLevel})`);
+            } catch (err) {
+              console.error(`[Prism] Auto-push failed for "${project}" (non-fatal): ${err}`);
+            }
+          }
+        } catch (err) {
+          console.error(`[Prism] Auto-push storage error (non-fatal): ${err}`);
+        }
+      }).catch(() => {/* storage warmup failed, auto-push gracefully skipped */});
+    }
   }
 
   // ─── v2.0 Step 6: Initialize SyncBus (Telepathy) ───
