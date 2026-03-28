@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.4.0] - 2026-03-28
+
+### Added
+- **CRDT Handoff Merging**: Replaced strict OCC rejection with automatic conflict-free multi-agent state merging. When two agents save concurrently, Prism now auto-merges instead of rejecting.
+  - Custom OR-Map engine (`crdtMerge.ts`): Add-Wins OR-Set for arrays (`open_todos`), Last-Writer-Wins for scalars (`last_summary`, `key_context`).
+  - 3-way merge with `getHandoffAtVersion()` base retrieval from SQLite and Supabase.
+  - `disable_merge` bypass parameter for strict OCC when needed.
+  - `totalCrdtMerges` tracked in health stats and dashboard.
+- **Background Purge Scheduler**: Unified automated maintenance system that replaces all manual storage management.
+  - Single `setInterval` loop (default: 12 hours, configurable via `PRISM_SCHEDULER_INTERVAL_MS`).
+  - 4 maintenance tasks: TTL sweep, Ebbinghaus importance decay, auto-compaction, deep storage purge.
+  - Dashboard status card with last sweep timestamp, duration, and per-task results.
+  - `PRISM_SCHEDULER_ENABLED` env var (default: `true`).
+- **Autonomous Web Scholar**: Agent-driven background research pipeline.
+  - Brave Search → Firecrawl scrape → LLM synthesis → Prism ledger injection.
+  - Task-aware topic selection: biases research toward active Hivemind agent tasks.
+  - Reentrancy guard prevents concurrent pipeline runs.
+  - 15K character content cap per scraped article for cost control.
+  - Configurable: `PRISM_SCHOLAR_ENABLED`, `PRISM_SCHOLAR_INTERVAL_MS`, `PRISM_SCHOLAR_TOPICS`, `PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN`.
+- **Scholar ↔ Hivemind Integration**: Scholar registers as `scholar` role agent with lifecycle heartbeats at each pipeline stage. Telepathy broadcast fires on completion to notify active agents. Task-aware topic selection biases research toward topics matching active agent tasks.
+- **Updated Architecture Documentation**: 3 new sections in `docs/ARCHITECTURE.md` covering Agent Hivemind, Background Scheduler, and Web Scholar with mermaid diagrams.
+
+### Architecture
+- New module: `src/scholar/webScholar.ts` — 281 lines, full pipeline with Hivemind integration.
+- New module: `src/crdtMerge.ts` — OR-Map engine with 3-way merge algorithm.
+- Extended: `src/backgroundScheduler.ts` — unified maintenance + Scholar scheduling.
+- Storage interface: `getHandoffAtVersion()` for CRDT base retrieval.
+
+### Engineering
+- 362 tests across 16 suites (10 new Scholar tests)
+- Clean TypeScript build, zero errors
+- Backward compatible: all new features are opt-in via env vars
+
+---
+
 ## [5.3.0] - 2026-03-28
 
 ### Added

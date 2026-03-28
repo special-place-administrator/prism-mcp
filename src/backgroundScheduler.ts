@@ -18,8 +18,9 @@
  */
 
 import { getStorage } from "./storage/index.js";
-import { PRISM_USER_ID } from "./config.js";
+import { PRISM_USER_ID, PRISM_SCHOLAR_ENABLED, PRISM_SCHOLAR_INTERVAL_MS } from "./config.js";
 import { debugLog } from "./utils/logger.js";
+import { runWebScholar } from "./scholar/webScholar.js";
 
 // ─── Configuration ───────────────────────────────────────────
 
@@ -140,12 +141,55 @@ export function getSchedulerStatus(): {
   startedAt: string | null;
   intervalMs: number;
   lastSweep: SchedulerSweepResult | null;
+  scholarRunning: boolean;
+  scholarIntervalMs: number;
 } {
   return {
     running: schedulerInterval !== null,
     startedAt: schedulerStartedAt,
     intervalMs: DEFAULT_SCHEDULER_CONFIG.intervalMs,
     lastSweep: lastSweepResult,
+    scholarRunning: scholarInterval !== null,
+    scholarIntervalMs: PRISM_SCHOLAR_INTERVAL_MS,
+  };
+}
+
+// ─── Scholar State ───────────────────────────────────────────
+let scholarInterval: ReturnType<typeof setInterval> | null = null;
+
+export function startScholarScheduler(): () => void {
+  if (scholarInterval) {
+    clearInterval(scholarInterval);
+  }
+
+  if (!PRISM_SCHOLAR_ENABLED || PRISM_SCHOLAR_INTERVAL_MS <= 0) {
+    debugLog("[WebScholar] 🕒 Scheduler disabled (PRISM_SCHOLAR_ENABLED=false or PRISM_SCHOLAR_INTERVAL_MS=0)");
+    return () => {};
+  }
+
+  // Initial trigger after 30s to avoid thundering herd on boot
+  setTimeout(() => {
+    runWebScholar().catch(err => {
+        console.error(`[WebScholar] Initial run error: ${err}`);
+    });
+  }, 30_000);
+
+  scholarInterval = setInterval(() => {
+    runWebScholar().catch(err => {
+      console.error(`[WebScholar] Sweep error: ${err}`);
+    });
+  }, PRISM_SCHOLAR_INTERVAL_MS);
+
+  console.error(
+    `[WebScholar] ⏰ Started (interval=${formatDuration(PRISM_SCHOLAR_INTERVAL_MS)})`
+  );
+
+  return () => {
+    if (scholarInterval) {
+      clearInterval(scholarInterval);
+      scholarInterval = null;
+      console.error("[WebScholar] Stopped");
+    }
   };
 }
 

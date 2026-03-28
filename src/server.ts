@@ -73,9 +73,10 @@ import {
   WATCHDOG_INTERVAL_MS, WATCHDOG_STALE_MIN, WATCHDOG_FROZEN_MIN,
   WATCHDOG_OFFLINE_MIN, WATCHDOG_LOOP_THRESHOLD,
   PRISM_SCHEDULER_ENABLED, PRISM_SCHEDULER_INTERVAL_MS,
+  PRISM_SCHOLAR_ENABLED,
 } from "./config.js";
 import { startWatchdog, drainAlerts } from "./hivemindWatchdog.js";
-import { startScheduler } from "./backgroundScheduler.js";
+import { startScheduler, startScholarScheduler } from "./backgroundScheduler.js";
 import { getSyncBus } from "./sync/factory.js";
 import type { SyncBus, SyncEvent } from "./sync/index.js";
 import { startDashboardServer } from "./dashboard/server.js";
@@ -1221,6 +1222,17 @@ export async function startServer() {
     });
   }
 
+  // ─── v5.4: Autonomous Web Scholar Scheduler ──────────────
+  // Background LLM research pipeline. Independent from the
+  // maintenance scheduler — has its own interval and enable flag.
+  if (PRISM_SCHOLAR_ENABLED && SESSION_MEMORY_ENABLED) {
+    storageReady?.then(() => {
+      startScholarScheduler();
+    }).catch(err => {
+      console.error(`[WebScholar] Startup failed (non-fatal): ${err}`);
+    });
+  }
+
   // Keep the process alive — without this, Node.js would exit
   // because there are no active event loop handles after the
   // synchronous setup completes.
@@ -1229,8 +1241,16 @@ export async function startServer() {
   }, 10000);
 }
 
-// Only auto-start when this module is executed directly (not imported by Smithery scanner)
-const isDirectExecution = process.argv[1]?.endsWith('server.js') || process.argv[1]?.endsWith('server.ts');
+// Only auto-start when this module is executed directly (not imported by Smithery scanner).
+// IMPORTANT: npm install -g creates a symlink like /usr/local/bin/prism-mcp-server
+// whose path does NOT end with 'server.js'. Node.js sets process.argv[1] to the
+// symlink path, not the resolved target. Without the bin-name check, startServer()
+// never fires and the process silently exits with zero stdout (see issue #21).
+const entryScript = process.argv[1] ?? '';
+const isDirectExecution =
+  entryScript.endsWith('server.js') ||
+  entryScript.endsWith('server.ts') ||
+  entryScript.endsWith('prism-mcp-server');
 if (isDirectExecution) {
   startServer().catch((error) => {
     console.error('Fatal error running server:', error);

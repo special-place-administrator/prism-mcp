@@ -2,7 +2,7 @@
 
 > **A local-first, self-improving memory engine for AI agents.**
 > 
-> Prism MCP provides persistent state, semantic search, multimodal capabilities, and observability for AI agents. This document details the architectural decisions, math, and data flows powering Prism v5.2+.
+> Prism MCP provides persistent state, semantic search, multimodal capabilities, and observability for AI agents. This document details the architectural decisions, math, and data flows powering Prism v5.4+.
 
 ---
 
@@ -14,6 +14,9 @@
 5. [The Knowledge Graph Engine](#5-the-knowledge-graph-engine)
 6. [Cognitive Memory (v5.2)](#6-cognitive-memory-v52)
 7. [Universal History Migration (v5.2)](#7-universal-history-migration-v52)
+8. [Agent Hivemind Mode (v5.3)](#8-agent-hivemind-mode-v53)
+9. [Background Purge Scheduler (v5.4)](#9-background-purge-scheduler-v54)
+10. [Autonomous Web Scholar (v5.4)](#10-autonomous-web-scholar-v54)
 
 ---
 
@@ -161,4 +164,160 @@ Imports use `p-limit(5)` to cap concurrent database writes, preventing SQLite WA
 2.  **Dashboard**: File picker + manual path input + dry-run toggle on the Import tab.
 
 ---
-*Prism MCP Architecture Guide — Last Updated: v5.2*
+*Prism MCP Architecture Guide — Last Updated: v5.4*
+
+---
+
+## 8. Agent Hivemind Mode (v5.3)
+
+`PRISM_ENABLE_HIVEMIND` is a feature flag that activates a suite of multi-agent coordination and monitoring capabilities. It transforms Prism from a single-agent memory store into a collaborative workspace for teams of AI agents.
+
+### Multi-Agent Coordination Tools
+
+When enabled, three additional MCP tools are registered:
+
+| Tool | Purpose |
+|------|---------|
+| `agent_register` | Register an agent's identity and role (`dev`, `qa`, `pm`, etc.) |
+| `agent_heartbeat` | Ping the server with the agent's current task and status |
+| `agent_list_team` | View all active teammates and their current tasks on the project |
+
+### The Hivemind Watchdog
+
+A server-side health monitor runs on a 60-second loop (configurable via `WATCHDOG_INTERVAL_MS`). It evaluates each registered agent's heartbeat history and classifies their health:
+
+```mermaid
+graph TD
+    W["⏰ Watchdog Loop (60s)"] --> C{Check Heartbeats}
+    C -->|Last beat < stale_min| G["🟢 Active"]
+    C -->|Last beat > stale_min| Y["🟡 Stale"]
+    C -->|Last beat > frozen_min| R["🔴 Frozen"]
+    C -->|Same task > loop_threshold| P["🟣 Looping"]
+    Y --> T["📡 Telepathy Alert"]
+    R --> T
+    P --> T
+    T --> H["Inject into healthy agent responses"]
+```
+
+**Configuration thresholds:**
+*   `WATCHDOG_STALE_MIN` — Minutes before an agent is flagged stale (default: 5)
+*   `WATCHDOG_FROZEN_MIN` — Minutes before an agent is flagged frozen (default: 15)
+*   `WATCHDOG_OFFLINE_MIN` — Minutes before an agent is pruned from the roster (default: 60)
+*   `WATCHDOG_LOOP_THRESHOLD` — Consecutive identical heartbeats before loop detection (default: 5)
+
+### Telepathy (Alert Injection)
+
+When the Watchdog detects an anomaly, it doesn't just log it — it uses **Telepathy** to directly intervene. The system intercepts standard MCP tool responses (`drainAlerts()` in `hivemindWatchdog.ts`) and injects `[🐝 SYSTEM ALERT]` messages into the context of *healthy* agents. This allows active LLMs to realize their teammate is struggling and dynamically adjust behavior — for example, taking over a stalled task or escalating to the human operator.
+
+### Dashboard Radar
+
+The **Hivemind Radar 🐝** card in the Mind Palace Dashboard provides real-time visibility:
+*   **Role icons**: 🛠️ dev, 🔍 qa, 📋 pm, 🏗️ lead, 🔒 security, 🎨 ux
+*   **Health indicators**: 🟢 active, 🟡 stale, 🔴 frozen, 🟣 looping, 💤 idle
+*   **Live task display** with loop count badges for stuck agents
+*   Auto-refreshes every 15 seconds
+
+**Key files:** `src/hivemindWatchdog.ts`, `src/tools/hivemindHandlers.ts`, `src/dashboard/ui.ts`
+
+---
+
+## 9. Background Purge Scheduler (v5.4)
+
+Prism v5.4 introduces a fully automated maintenance loop that handles all storage hygiene tasks previously requiring manual tool calls.
+
+### Architecture
+
+A single `setInterval` loop runs on a configurable cadence (default: 12 hours). Tasks execute **sequentially** to avoid overloading the storage backend:
+
+```mermaid
+graph LR
+    S["⏰ Scheduler Loop"] --> T1["1. TTL Sweep"]
+    T1 --> T2["2. Importance Decay"]
+    T2 --> T3["3. Compaction"]
+    T3 --> T4["4. Deep Purge"]
+    T4 --> R["📊 Dashboard Status"]
+```
+
+| Task | What it does | Speed |
+|------|-------------|-------|
+| **TTL Sweep** | Hard-deletes entries exceeding project-level retention policies | Fast (SQL DELETE) |
+| **Importance Decay** | Applies Ebbinghaus curve (`0.95^days`) to old behavioral entries | Fast (SQL UPDATE) |
+| **Compaction** | Summarizes old entries via LLM, archives originals | Slow (LLM call) |
+| **Deep Purge** | NULLs float32 embeddings on entries with TurboQuant backups | Moderate (SQL UPDATE) |
+
+### Non-Blocking Design
+
+*   Each task is wrapped in its own `try/catch` — a single task failure never crashes the sweep
+*   Results are accumulated into a `SchedulerSweepResult` object and served to the dashboard
+*   Compaction uses dynamic `import()` to avoid circular dependencies with the LLM factory
+
+### Configuration
+
+```bash
+PRISM_SCHEDULER_ENABLED=true          # Toggle the loop (default: true)
+PRISM_SCHEDULER_INTERVAL_MS=43200000  # 12 hours between sweeps
+```
+
+**Key files:** `src/backgroundScheduler.ts`, `src/dashboard/ui.ts` (status widget)
+
+---
+
+## 10. Autonomous Web Scholar (v5.4)
+
+The Web Scholar is an autonomous background research pipeline that makes Prism **self-improving**. It runs periodically or on-demand, discovers relevant articles, synthesizes insights, and injects them directly into the knowledge base.
+
+### Pipeline Architecture
+
+```mermaid
+graph LR
+    A["🎲 Pick Random Topic"] --> B["🔍 Brave Search API"]
+    B --> C["📄 Firecrawl Scrape"]
+    C --> D["✂️ Trim to 15K chars"]
+    D --> E["🧠 LLM Synthesis"]
+    E --> F["💾 saveLedger(importance: 7)"]
+    F --> G["Knowledge Base"]
+```
+
+1.  **Topic Selection**: Picks a random topic from the `PRISM_SCHOLAR_TOPICS` comma-separated list
+2.  **Web Search**: Queries the Brave Search API for up to `PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN` (default: 3) articles
+3.  **Content Extraction**: Scrapes each URL via the Firecrawl `/v1/scrape` API as markdown. Each article is capped at 15,000 characters to prevent LLM context overflow
+4.  **LLM Synthesis**: Passes all scraped content to the active LLM provider with a synthesis prompt, generating a comprehensive research report
+5.  **Ledger Injection**: Saves the report to the semantic ledger with `importance: 7` (auto-graduated) under the `prism-scholar` project. Future agent sessions will passively surface these insights during knowledge search
+
+### Safety & Cost Controls
+
+*   **Reentrancy Guard**: A module-level `isRunning` lock prevents concurrent pipeline executions from overlapping (scheduler + manual trigger)
+*   **Opt-in by default**: `PRISM_SCHOLAR_ENABLED` defaults to `false`; `PRISM_SCHOLAR_INTERVAL_MS` defaults to `0` (manual-only)
+*   **Content cap**: Articles are truncated to 15KB before LLM synthesis to bound token costs
+*   **Graceful degradation**: Pipeline silently disables itself if `BRAVE_API_KEY` or `FIRECRAWL_API_KEY` are missing
+
+### Configuration
+
+```bash
+PRISM_SCHOLAR_ENABLED=true          # Opt-in to enable
+PRISM_SCHOLAR_INTERVAL_MS=3600000   # Run every hour (0 = manual only)
+PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN=3
+PRISM_SCHOLAR_TOPICS=ai,agents,mcp  # Comma-separated research interests
+FIRECRAWL_API_KEY=fc-xxxxx          # Required for scraping
+```
+
+### Dashboard Integration
+
+The Background Scheduler card exposes:
+*   **🧠 Scholar (Run)** button — manually triggers a research cycle
+*   **Status indicator** — shows Web Scholar enabled/disabled state and interval even when the maintenance scheduler is off
+
+### Observability
+
+The pipeline is fully instrumented with OpenTelemetry. Each `runWebScholar()` execution creates a span with attributes:
+*   `scholar.topic` — the selected research topic
+*   `scholar.articles_found` / `scholar.articles_scraped` — pipeline throughput
+*   `scholar.skipped_reason` — why the pipeline exited early (missing keys, no results, etc.)
+*   `scholar.success` / `scholar.error` — outcome tracking
+
+**Key files:** `src/scholar/webScholar.ts`, `src/backgroundScheduler.ts` (scheduler), `src/dashboard/server.ts` (API trigger), `src/dashboard/ui.ts` (button/status)
+
+---
+
+*Prism MCP Architecture Guide — Last Updated: v5.4*
+

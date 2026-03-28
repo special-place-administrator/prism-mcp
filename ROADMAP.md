@@ -138,40 +138,21 @@ With v5.2 shipped, Prism has crossed from retrieval into **cognition**:
 
 ---
 
-### ✅ v5.3.0 — Stability & Observability
+### ✅ v5.4.0 — Concurrency, Automation & Autonomous Research
 
 | Feature | Detail |
 |---------|--------|
-| 🖥️ **MCP Stdio Confirmation** | Fixed "hanging" terminal UX by injecting an explicit `console.error` startup confirmation when listening on stdio transport. |
-| 📦 **Repomix Support** | Supported repository bundles for documentation and context tracking. |
+| 🔄 **CRDT Handoff Merging** | Custom OR-Map engine replaces strict OCC rejection. Add-Wins OR-Set for arrays (`open_todos`), Last-Writer-Wins for scalars. 3-way merge via `getHandoffAtVersion()`. `disable_merge` bypass for strict mode. |
+| ⏰ **Background Purge Scheduler** | Unified `setInterval` loop (default: 12h) runs TTL sweep, importance decay, auto-compaction, and deep storage purge. Dashboard status card. `PRISM_SCHEDULER_ENABLED` / `PRISM_SCHEDULER_INTERVAL_MS`. |
+| 🌐 **Autonomous Web Scholar** | Brave Search → Firecrawl scrape → LLM synthesis → Prism ledger injection. Task-aware topic selection biases toward active Hivemind agent tasks. Reentrancy guard, 15K content cap, configurable schedule. |
+| 🐝 **Scholar ↔ Hivemind** | Scholar registers as `scholar` role, emits pipeline-stage heartbeats, broadcasts Telepathy alerts on completion. Zero overhead when Hivemind is off. |
+| 📖 **Architecture Docs** | 3 new sections in `docs/ARCHITECTURE.md` with mermaid diagrams covering Hivemind, Scheduler, and Scholar. |
 
 ---
 
-## 🗺️ Next on the Horizon — v5.4
+## 🗺️ Next on the Horizon — v5.5
 
-The next major frontier: **Concurrency, Automation & Mobile**.
-
-### 🔄 CRDT Handoff Merging
-
-**Problem:** Today's OCC (optimistic concurrency control) rejects one agent when two try to save simultaneously. The rejected agent must retry. This is fine for 2 agents but doesn't scale to 5+.
-
-**Solution:** Replace the strict version-bump model with **conflict-free replicated data types** (CRDTs). Each agent can independently mutate `open_todos`, `key_context`, and `last_summary` — merges happen automatically without rejection or retry.
-
-**Architecture candidates:**
-- **Automerge** — mature Rust-backed CRDT library with JS bindings
-- **Yjs** — lighter-weight, excellent for text/array/map types
-- **Custom LWW-Register** — last-writer-wins per-field, simplest to implement
-
-### ⏰ Background Purge Scheduler
-
-**Problem:** `deep_storage_purge` must be invoked manually. Users forget, storage grows.
-
-**Solution:** A cron-style scheduler inside the Prism server process that automatically runs purge on a configurable interval (default: weekly). Completely abstracts storage management away from the user.
-
-**Implementation:**
-- Node.js `setInterval` or `node-cron` with configurable schedule via dashboard
-- Respects all existing safety guards (7-day minimum age, dry-run logging)
-- Dashboard shows last-purge timestamp and bytes reclaimed
+The next major frontier: **Mobile & Advanced Cognition**.
 
 ### 📱 Mind Palace Mobile PWA
 
@@ -184,14 +165,11 @@ The next major frontier: **Concurrency, Automation & Mobile**.
 2. Service worker + offline cache for read-only access
 3. Push notifications via Web Push API for Telepathy events
 
-### 🥉 Autonomous Web Scholar 🌐
+### 🧠 Superposed Memory (SDM)
 
-Agent-driven learning pipeline:
-1. Brave Search + Firecrawl scrape for a given topic
-2. VLM extracts key concepts from diagrams/screenshots
-3. Gemini summarizes and deduplicates
-4. Results saved as ledger entries → semantically searchable
-5. Runs on a cron schedule while the developer sleeps
+**Problem:** Semantic search requires embedding every query and scanning all vectors — O(n) at scale.
+
+**Solution:** Sparse Distributed Memory (Kanerva, 1988) — store patterns in a superposed address space for O(1) retrieval via correlation. No index, no ANN, just ask the vector.
 
 ---
 

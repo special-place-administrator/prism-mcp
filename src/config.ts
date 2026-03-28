@@ -182,3 +182,24 @@ export const PRISM_SCHEDULER_INTERVAL_MS = parseInt(
   process.env.PRISM_SCHEDULER_INTERVAL_MS || "43200000", 10  // 12 hours
 );
 
+// ─── v5.4: Autonomous Web Scholar ─────────────────────────────
+// Background LLM research pipeline powered by Brave Search + Firecrawl.
+// Defaults are conservative to prevent runaway API costs.
+
+export const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
+export const PRISM_SCHOLAR_ENABLED = process.env.PRISM_SCHOLAR_ENABLED === "true"; // Opt-in
+
+if (PRISM_SCHOLAR_ENABLED && !FIRECRAWL_API_KEY) {
+  console.error("Warning: FIRECRAWL_API_KEY environment variable is missing. Web Scholar will be unavailable.");
+}
+export const PRISM_SCHOLAR_INTERVAL_MS = parseInt(
+  process.env.PRISM_SCHOLAR_INTERVAL_MS || "0", 10  // Default manual-only
+);
+export const PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN = parseInt(
+  process.env.PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN || "3", 10
+);
+export const PRISM_SCHOLAR_TOPICS = (process.env.PRISM_SCHOLAR_TOPICS || "ai,agents")
+  .split(",")
+  .map(t => t.trim());
+
+

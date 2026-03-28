@@ -63,6 +63,9 @@ Save UI screenshots, architecture diagrams, and bug states to a searchable vault
 ### 🔭 Full Observability
 OpenTelemetry spans for every MCP tool call, LLM hop, and background worker. Route to Jaeger, Grafana, or any OTLP collector. Configure in the dashboard — zero code changes.
 
+### 🌐 Autonomous Web Scholar
+Prism researches while you sleep. A background pipeline searches the web, scrapes articles, synthesizes findings via LLM, and injects results directly into your semantic memory — fully searchable on your next session. [Details below →](#-autonomous-web-scholar)
+
 ### 🔒 GDPR Compliant
 Soft/hard delete (Art. 17), full ZIP export (Art. 20), API key redaction, per-project TTL retention, and audit trail. Enterprise-ready out of the box.
 
@@ -88,16 +91,108 @@ Soft/hard delete (Art. 17), full ZIP export (Art. 20), API key redaction, per-pr
 
 ---
 
-## 🆕 What's New in v5.2
+## 🆕 What's New in v5.4
 
-- 🧠 **Cognitive Memory** — Ebbinghaus importance decay computes `effective_importance = base × 0.95^days` at retrieval time. Frequently accessed memories stay prominent; neglected ones naturally fade. Tracks `last_accessed_at` per entry.
-- 🎯 **Context-Weighted Retrieval** — New `context_boost` parameter on `session_search_memory` prepends your active project's context to the query before embedding, biasing results toward what matters right now.
-- 🔄 **[Universal History Migration](#migration)** — Import years of Claude Code, Gemini, and ChatGPT sessions on day one. Strategy Pattern adapters with OOM-safe streaming, content-hash dedup, and `--dry-run` support. Also available via the [Dashboard Import UI](#-mind-palace-dashboard).
-- 🧹 **Smart Consolidation** — Enhanced compaction extracts recurring principles alongside summaries for richer rollups.
-- 🛡️ **SQL Injection Prevention** — 17-column allowlist on `patchLedger()` hardens all dynamic SQL paths.
-- 🧪 **352 Tests** — Zero regressions across 15 suites.
+- 🔄 **CRDT Handoff Merging** — Multi-agent saves no longer reject on version conflict. A custom OR-Map engine (Add-Wins OR-Set for arrays, Last-Writer-Wins for scalars) auto-merges concurrent edits. Zero data loss, zero retries.
+- ⏰ **Background Purge Scheduler** — Fully automated storage maintenance. TTL sweep, Ebbinghaus importance decay, auto-compaction, and deep storage purge run on a configurable interval (default: 12h). Dashboard shows sweep status.
+- 🌐 **[Autonomous Web Scholar](#-autonomous-web-scholar)** — Agent-driven research pipeline. Brave Search → Firecrawl scrape → LLM synthesis → Prism ledger. Task-aware topic selection biases research toward active Hivemind agent tasks. [Learn more →](#-autonomous-web-scholar)
+- 🐝 **Scholar ↔ Hivemind Integration** — Scholar registers on the Hivemind Radar, emits heartbeats, and broadcasts Telepathy alerts on completion.
+- 🧪 **362 Tests** — Zero regressions across 16 suites.
 
 > [Full CHANGELOG →](CHANGELOG.md) · [Architecture Deep Dive →](docs/ARCHITECTURE.md)
+
+---
+
+## 🌐 Autonomous Web Scholar
+
+**Your agent researches while you sleep.**
+
+Most AI agents only know what you tell them. Web Scholar reverses this — Prism autonomously searches the web, scrapes articles, synthesizes findings with an LLM, and injects the results directly into your semantic memory. When you start your next session, the knowledge is already there, fully searchable.
+
+> 📖 **[Full setup guide →](docs/WEB_SCHOLAR.md)** | Copy [`.env.example`](.env.example) to get started quickly.
+
+### Why Web Scholar?
+
+| Problem | Without Scholar | With Scholar |
+|---------|----------------|--------------|
+| **Knowledge freshness** | Agent only knows training data + what you paste | Agent proactively learns from the live web |
+| **Research burden** | You manually search, copy, and paste articles | Prism does it automatically on a schedule |
+| **Context relevance** | Generic research, disconnected from your work | Task-aware: biases toward what your team is actively building |
+| **Multi-agent awareness** | Agents work in isolation | Scholar broadcasts findings to all active Hivemind agents |
+
+### How It Works
+
+```
+                    ┌──────────────────────────────────────────┐
+                    │        Web Scholar Pipeline (v5.4)       │
+                    └──────────────────────────────────────────┘
+                                      │
+            ┌─────────────────────────┼────────────────────────┐
+            ▼                         ▼                        ▼
+    1. Topic Selection        2. Web Search           3. Scrape & Extract
+    ┌──────────────┐         ┌──────────────┐        ┌──────────────┐
+    │ If Hivemind:  │         │ Brave Search │        │  Firecrawl   │
+    │ bias toward   │─────►  │ API (top N)  │─────►  │ Markdown API │
+    │ active tasks  │         └──────────────┘        └──────────────┘
+    └──────────────┘                                        │
+                                                            ▼
+                              4. LLM Synthesis        5. Memory Injection
+                             ┌──────────────┐        ┌──────────────┐
+                             │ Comprehensive │        │  Save to     │
+                             │ report with   │─────►  │  Prism ledger│
+                             │ key findings  │        │  (importance │
+                             └──────────────┘        │   = 7)       │
+                                                     └──────┬───────┘
+                                                            │
+                              6. Telepathy Broadcast        ▼
+                             ┌──────────────────────────────────┐
+                             │ 🐝 Active agents see: "Scholar  │
+                             │ completed: AI — 3 articles"     │
+                             └──────────────────────────────────┘
+```
+
+### Key Features
+
+- **Task-Aware Topic Selection** — When Hivemind is enabled, Scholar checks what other agents are working on and biases research toward relevant configured topics. A dev agent working on "authentication middleware" causes Scholar to prefer researching "authentication" over random topics.
+- **Reentrancy Guard** — Prevents concurrent pipeline runs. If Scholar is already researching and a second trigger fires (manual + scheduled overlap), the second call is silently skipped.
+- **Cost Control** — 15K character cap per scraped article, configurable max articles per run (default: 3), and manual-only scheduling by default.
+- **Hivemind Lifecycle** — Scholar registers as a `scholar` role agent, emits heartbeats at each pipeline stage (visible on Dashboard Radar), and goes idle on completion.
+- **Telepathy Broadcast** — After synthesis, Scholar broadcasts to all active agents so they discover new research in their next tool response.
+
+### Configuration
+
+```json
+{
+  "env": {
+    "BRAVE_API_KEY": "your-brave-key",
+    "FIRECRAWL_API_KEY": "your-firecrawl-key",
+    "PRISM_SCHOLAR_ENABLED": "true",
+    "PRISM_SCHOLAR_INTERVAL_MS": "3600000",
+    "PRISM_SCHOLAR_TOPICS": "ai,agents,mcp,authentication",
+    "PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN": "3"
+  }
+}
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PRISM_SCHOLAR_ENABLED` | `false` | Opt-in to enable the Web Scholar pipeline |
+| `PRISM_SCHOLAR_INTERVAL_MS` | `0` (manual) | Auto-run interval. `3600000` = hourly, `0` = manual only |
+| `PRISM_SCHOLAR_TOPICS` | `ai,agents` | Comma-separated list of research topics |
+| `PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN` | `3` | Max articles scraped per pipeline run |
+
+### Performance & Test Results
+
+| Metric | Result |
+|--------|--------|
+| **Test coverage** | 10 tests across 3 suites (reentrancy, topic selection, Hivemind lifecycle) |
+| **Reentrancy guard** | Concurrent calls correctly rejected; lock released on both success and failure |
+| **Task-aware selection** | Correctly biases toward topics matching active agent tasks |
+| **Hivemind no-op** | Zero Hivemind API calls when `PRISM_ENABLE_HIVEMIND=false` |
+| **Pipeline heartbeats** | Accurately reports stage: "Searching Brave", "Scraping N articles", "Synthesizing" |
+| **Graceful fallback** | Storage errors fall back to random topic (no crash) |
+| **Content cap** | Articles trimmed to 15K chars — prevents runaway token costs |
+| **Full suite** | 362/362 tests pass across 16 suites |
 
 ---
 
@@ -462,9 +557,12 @@ Then add to your MCP config:
 - ✅ Behavioral memory — importance tracking, auto-decay, mistake learning
 - ✅ Visual dashboard — Mind Palace at localhost:3000
 - ✅ Multi-agent sync — role-isolated Hivemind with real-time Telepathy
+- ✅ CRDT merging — conflict-free concurrent multi-agent edits
+- ✅ Autonomous research — Web Scholar pipeline runs while you sleep
 - ✅ Visual memory — VLM-captioned screenshot vault
 - ✅ Token budgeting — `max_tokens` param on context loading
 - ✅ 10× vector compression — TurboQuant, no external vector DB
+- ✅ Automated maintenance — background scheduler handles TTL, decay, compaction, purge
 - ✅ GDPR compliance — soft/hard delete, ZIP export, TTL retention
 - ✅ OpenTelemetry — full span tracing to Jaeger/Grafana
 - ✅ LangChain adapters — `BaseRetriever` integration + LangGraph examples
@@ -473,7 +571,7 @@ Then add to your MCP config:
 - ✅ IDE rules sync — graduated insights → `.cursorrules` / `.clauderules`
 - ✅ Air-gapped mode — SQLite + Ollama, zero internet needed
 
-> **TL;DR:** Prism is the only MCP memory server with time travel, behavioral learning, visual memory, multi-agent sync, and 10× compression — all from a single `npx` command.
+> **TL;DR:** Prism is the only MCP memory server with time travel, behavioral learning, autonomous research, CRDT multi-agent sync, and 10× compression — all from a single `npx` command.
 
 ---
 
@@ -560,6 +658,7 @@ Requires `PRISM_ENABLE_HIVEMIND=true`.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `BRAVE_API_KEY` | No | Brave Search Pro API key |
+| `FIRECRAWL_API_KEY` | No | Firecrawl API key — required for Web Scholar |
 | `PRISM_STORAGE` | No | `"local"` (default) or `"supabase"` — restart required |
 | `PRISM_ENABLE_HIVEMIND` | No | `"true"` to enable multi-agent tools — restart required |
 | `PRISM_INSTANCE` | No | Instance name for multi-server PID isolation |
@@ -572,6 +671,12 @@ Requires `PRISM_ENABLE_HIVEMIND=true`.
 | `PRISM_CAPTURE_PORTS` | No | Comma-separated ports (default: `3000,3001,5173,8080`) |
 | `PRISM_DEBUG_LOGGING` | No | `"true"` for verbose logs |
 | `PRISM_DASHBOARD_PORT` | No | Dashboard port (default: `3000`) |
+| `PRISM_SCHEDULER_ENABLED` | No | `"false"` to disable background maintenance (default: enabled) |
+| `PRISM_SCHEDULER_INTERVAL_MS` | No | Maintenance interval in ms (default: `43200000` = 12h) |
+| `PRISM_SCHOLAR_ENABLED` | No | `"true"` to enable Web Scholar pipeline |
+| `PRISM_SCHOLAR_INTERVAL_MS` | No | Scholar interval in ms (default: `0` = manual only) |
+| `PRISM_SCHOLAR_TOPICS` | No | Comma-separated research topics (default: `"ai,agents"`) |
+| `PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN` | No | Max articles per Scholar run (default: `3`) |
 
 </details>
 
@@ -640,6 +745,11 @@ Available roles: `dev`, `qa`, `pm`, `lead`, `security`, `ux`, `global`, or any c
 src/
 ├── server.ts                  # MCP server core + tool routing
 ├── config.ts                  # Environment management
+├── crdtMerge.ts               # OR-Map CRDT engine for handoff merging
+├── backgroundScheduler.ts     # Unified maintenance + Scholar scheduling
+├── hivemindWatchdog.ts        # Agent health monitoring + Telepathy
+├── scholar/
+│   └── webScholar.ts          # Autonomous Web Scholar pipeline
 ├── storage/
 │   ├── interface.ts           # StorageBackend abstraction
 │   ├── sqlite.ts              # SQLite local (libSQL + F32_BLOB)
@@ -715,7 +825,9 @@ Prism is evolving from smart session logging toward a **cognitive memory archite
 
 ## Version History
 
-- **v5.2** — Cognitive Memory (Ebbinghaus decay, context-weighted retrieval), Universal History Migration, Smart Consolidation, three-layer Antigravity auto-load + server-side fallback
+- **v5.4** — CRDT Handoff Merging, Background Purge Scheduler, Autonomous Web Scholar, Scholar ↔ Hivemind Integration
+- **v5.3** — Hivemind Health Watchdog (state machine, loop detection, Telepathy alert injection)
+- **v5.2** — Cognitive Memory (Ebbinghaus decay, context-weighted retrieval), Universal History Migration, Smart Consolidation
 - **v5.1** — Knowledge Graph Editor, Deep Storage purge
 
 <details>
@@ -742,11 +854,9 @@ See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 > **[Full ROADMAP.md →](ROADMAP.md)**
 
-**Next (v5.3):**
-- 🔄 CRDT Handoff Merging — conflict-free concurrent multi-agent edits
-- ⏰ Background Purge Scheduler — automated storage reclamation
+**Next (v5.5):**
 - 📱 Mind Palace Mobile PWA — offline-first responsive dashboard
-- 🌐 Autonomous Web Scholar — agent-driven research pipeline
+- 🧠 Superposed Memory (SDM) — O(1) retrieval via correlation
 
 ---
 
