@@ -122,33 +122,26 @@ Most AI agents only know what you tell them. Web Scholar reverses this — Prism
 
 ### How It Works
 
-```
-                    ┌──────────────────────────────────────────┐
-                    │        Web Scholar Pipeline (v5.4)       │
-                    └──────────────────────────────────────────┘
-                                      │
-            ┌─────────────────────────┼────────────────────────┐
-            ▼                         ▼                        ▼
-    1. Topic Selection        2. Web Search           3. Scrape & Extract
-    ┌──────────────┐         ┌──────────────┐        ┌──────────────┐
-    │ If Hivemind:  │         │ Brave Search │        │  Firecrawl   │
-    │ bias toward   │─────►  │ API (top N)  │─────►  │ Markdown API │
-    │ active tasks  │         └──────────────┘        └──────────────┘
-    └──────────────┘                                        │
-                                                            ▼
-                              4. LLM Synthesis        5. Memory Injection
-                             ┌──────────────┐        ┌──────────────┐
-                             │ Comprehensive │        │  Save to     │
-                             │ report with   │─────►  │  Prism ledger│
-                             │ key findings  │        │  (importance │
-                             └──────────────┘        │   = 7)       │
-                                                     └──────┬───────┘
-                                                            │
-                              6. Telepathy Broadcast        ▼
-                             ┌──────────────────────────────────┐
-                             │ 🐝 Active agents see: "Scholar  │
-                             │ completed: AI — 3 articles"     │
-                             └──────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["🎯 1. Topic Selection"] -->|"Hivemind-aware"| B["🔍 2. Web Search"]
+    B -->|"Top N results"| C["📄 3. Scrape & Extract"]
+    C -->|"Clean markdown"| D["🧠 4. LLM Synthesis"]
+    D -->|"Research report"| E["💾 5. Memory Injection"]
+    E -->|"Broadcast"| F["🐝 6. Telepathy"]
+
+    A -.-|"If Hivemind: bias toward active tasks"| A
+    C -.-|"Firecrawl Markdown API"| C
+    D -.-|"Gemini 2.5 Flash"| D
+    E -.-|"Prism ledger, importance = 7"| E
+    F -.-|"All active agents notified"| F
+
+    style A fill:#4a9eff,color:#fff
+    style B fill:#ff6b6b,color:#fff
+    style C fill:#ffa502,color:#fff
+    style D fill:#7c3aed,color:#fff
+    style E fill:#2ed573,color:#fff
+    style F fill:#ff9ff3,color:#fff
 ```
 
 ### Key Features

@@ -157,31 +157,18 @@ This button works **regardless** of whether automatic scheduling is enabled — 
 
 ### Pipeline Architecture
 
-```
-┌─────────────────┐
-│  Topic Selection │ ← Task-aware: biases toward active Hivemind tasks
-│  (configurable)  │
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│  Brave Search   │ ← Discovers top articles for the selected topic
-│  (Pro API)      │
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│  Firecrawl      │ ← Extracts clean markdown from web pages
-│  (Scrape API)   │   Content capped at 15K chars per article
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│  Gemini LLM     │ ← Synthesizes a concise research summary
-│  (2.5 Flash)    │   Extracts key insights, decisions, and TODOs
-└────────┬────────┘
-         ▼
-┌─────────────────┐
-│  Ledger Inject  │ ← Saves the summary as a session_ledger entry
-│  + Telepathy    │   Broadcasts findings to all active agents
-└─────────────────┘
+```mermaid
+flowchart TD
+    A["🎯 Topic Selection<br/><i>configurable, task-aware</i>"] --> B["🔍 Brave Search<br/><i>Pro API</i>"]
+    B --> C["📄 Firecrawl<br/><i>Scrape API, 15K cap</i>"]
+    C --> D["🧠 Gemini LLM<br/><i>2.5 Flash</i>"]
+    D --> E["💾 Ledger Inject<br/><i>+ Telepathy broadcast</i>"]
+
+    style A fill:#4a9eff,color:#fff
+    style B fill:#ff6b6b,color:#fff
+    style C fill:#ffa502,color:#fff
+    style D fill:#7c3aed,color:#fff
+    style E fill:#2ed573,color:#fff
 ```
 
 ### Key Design Features
