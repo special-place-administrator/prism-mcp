@@ -41,7 +41,9 @@ Every time you start a new conversation with an AI coding assistant, it starts f
 - [Tool Reference](#-tool-reference)
 - [Environment Variables](#environment-variables)
 - [Architecture](#architecture)
-- [Limitations & Roadmap](#-limitations)
+- [Research Roadmap](#research-roadmap)
+- [Roadmap](#-roadmap)
+- [Limitations](#%EF%B8%8F-limitations)
 
 ---
 
@@ -431,7 +433,7 @@ Save UI screenshots, architecture diagrams, and bug states to a searchable vault
 ### 🔭 Full Observability
 OpenTelemetry spans for every MCP tool call, LLM hop, and background worker. Route to Jaeger, Grafana, or any OTLP collector. Configure in the dashboard — zero code changes.
 
-### 🌐 Autonomous Web Scholar
+## 🌐 Autonomous Web Scholar
 Prism researches while you sleep. A background pipeline searches the web, scrapes articles, synthesizes findings via LLM, and injects results directly into your semantic memory — fully searchable on your next session. [Details below →](#-autonomous-web-scholar)
 
 ### 🔒 GDPR Compliant
@@ -782,7 +784,7 @@ Prism is evolving from smart session logging toward a **cognitive memory archite
 
 ---
 
-## 🚀 Roadmap
+## 📅 Roadmap
 
 > **[Full ROADMAP.md →](ROADMAP.md)**
 
