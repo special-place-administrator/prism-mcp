@@ -124,14 +124,15 @@ Most AI agents only know what you tell them. Web Scholar reverses this — Prism
 
 ```mermaid
 flowchart TD
-    A["🎯 1. Topic Selection"] -->|"Hivemind-aware"| B["🔍 2. Web Search"]
+    A["🎯 1. Topic Selection"] -.->|"If Hivemind: bias active tasks"| A
+    A -->|"Hivemind-aware"| B["🔍 2. Web Search"]
     B -->|"Top N results"| C["📄 3. Scrape & Extract"]
     C -->|"Clean markdown"| D["🧠 4. LLM Synthesis"]
     D -->|"Research report"| E["💾 5. Memory Injection"]
     E -->|"Broadcast"| F["🐝 6. Telepathy"]
 
-    A -.-|"If Hivemind: bias toward active tasks"| A
-    C -.-|"Firecrawl Markdown API"| C
+    B -.-|"Brave OR Yahoo Fallback"| B
+    C -.-|"Firecrawl OR Readability"| C
     D -.-|"Gemini 2.5 Flash"| D
     E -.-|"Prism ledger, importance = 7"| E
     F -.-|"All active agents notified"| F
@@ -170,6 +171,8 @@ flowchart TD
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PRISM_SCHOLAR_ENABLED` | `false` | Opt-in to enable the Web Scholar pipeline |
+| `BRAVE_API_KEY` | `""` | Optional. Used for search. If missing, falls back to zero-config local Yahoo Search. |
+| `FIRECRAWL_API_KEY` | `""` | Optional. Used for scraping. If missing, falls back to local JSDOM/Readability scraping. |
 | `PRISM_SCHOLAR_INTERVAL_MS` | `0` (manual) | Auto-run interval. `3600000` = hourly, `0` = manual only |
 | `PRISM_SCHOLAR_TOPICS` | `ai,agents` | Comma-separated list of research topics |
 | `PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN` | `3` | Max articles scraped per pipeline run |
@@ -183,7 +186,7 @@ flowchart TD
 | **Task-aware selection** | Correctly biases toward topics matching active agent tasks |
 | **Hivemind no-op** | Zero Hivemind API calls when `PRISM_ENABLE_HIVEMIND=false` |
 | **Pipeline heartbeats** | Accurately reports stage: "Searching Brave", "Scraping N articles", "Synthesizing" |
-| **Graceful fallback** | Storage errors fall back to random topic (no crash) |
+| **Graceful fallback** | Zero-config Local Fallback (Yahoo+Readability) if API keys missing; Storage errors fall back to random topic (no crash) |
 | **Content cap** | Articles trimmed to 15K chars — prevents runaway token costs |
 | **Full suite** | 362/362 tests pass across 16 suites |
 
