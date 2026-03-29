@@ -340,6 +340,8 @@ Tell the agent: *"Wrap up the session."* It should execute:
 - **`replace_file_content` silently fails** on `~/.gemini/GEMINI.md` in some environments — use `write_to_file` with overwrite instead
 - **Multiple GEMINI.md locations** can conflict: global (`~/.gemini/`), workspace, and User Rules in the Antigravity UI. Keep them synchronized
 - **Camoufox/browser tools** called at startup spawn visible black windows — never call browser tools during greeting handlers
+- **`connection closed: EOF` after config changes** — Antigravity does not hot-reload `mcp_config.json`. If a server crashes on first boot (wrong path, missing build), the transport is marked "Closed" permanently. Fix the config, then **restart the IDE** — it will not attempt to reconnect on its own
+- **Clone & Build: use `dist/server.js`** — If you use the "Clone & Build" setup, you must point to the compiled `dist/server.js`, not `src/index.js`. Running `node src/index.js` crashes immediately, which causes the EOF loop above
 
 </details>
 
