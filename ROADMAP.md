@@ -4,9 +4,43 @@
 
 ---
 
-## 🏆 Shipped — The v4.x Lineage
+## 🏆 Shipped
 
 Prism has evolved from a simple SQLite session logger into a **Quantized, Multimodal, Multi-Agent, Self-Learning, Observable AI Operating System**.
+
+### ✅ v5.5.0 — Architectural Hardening
+
+| Feature | Detail |
+|---------|--------|
+| 🛡️ **Transactional Migrations** | SQLite DDL rebuilds wrapped in explicit `BEGIN/COMMIT` blocks. A crash mid-migration can no longer corrupt schema or lose handoff state. |
+| 🛑 **Graceful Shutdown Registry** | `BackgroundTaskRegistry` uses 5-second `Promise.race()` to await all in-flight flushes (embeddings, SDM writes, OTel spans) before process exit. No more orphaned I/O. |
+| 🕰️ **Thundering Herd Prevention** | Maintenance scheduler migrated from `setInterval` to state-aware recursive `setTimeout`. Expensive routines can never stack. |
+| 🚀 **Zero-Thrashing SDM Scans** | `Int32Array` scratchpad allocations hoisted outside hot decode loop. Eliminates V8 GC pressure on large memory banks. |
+| 🧪 **374 Tests** | Zero regressions across 17 test suites. |
+
+---
+
+### ✅ v5.4.0 — Concurrency, Automation & Autonomous Research
+
+| Feature | Detail |
+|---------|--------|
+| 🔄 **CRDT Handoff Merging** | Custom OR-Map engine replaces strict OCC rejection. Add-Wins OR-Set for arrays (`open_todos`), Last-Writer-Wins for scalars. 3-way merge via `getHandoffAtVersion()`. `disable_merge` bypass for strict mode. |
+| ⏰ **Background Purge Scheduler** | Unified `setInterval` loop (default: 12h) runs TTL sweep, importance decay, auto-compaction, and deep storage purge. Dashboard status card. `PRISM_SCHEDULER_ENABLED` / `PRISM_SCHEDULER_INTERVAL_MS`. |
+| 🌐 **Autonomous Web Scholar** | Brave Search → Firecrawl scrape → LLM synthesis → Prism ledger injection. Task-aware topic selection biases toward active Hivemind agent tasks. Reentrancy guard, 15K content cap, configurable schedule. |
+| 🐝 **Scholar ↔ Hivemind** | Scholar registers as `scholar` role, emits pipeline-stage heartbeats, broadcasts Telepathy alerts on completion. Zero overhead when Hivemind is off. |
+| 📖 **Architecture Docs** | 3 new sections in `docs/ARCHITECTURE.md` with mermaid diagrams covering Hivemind, Scheduler, and Scholar. |
+
+---
+
+### ✅ v5.3.0 — Hivemind Health Watchdog
+
+| Feature | Detail |
+|---------|--------|
+| 🐝 **Hivemind Health Watchdog** | State-machine lifecycle (initializing → idle → monitoring → alerting → recovering). Detects stuck agents, scheduling loops, and resource exhaustion. |
+| 🔁 **Loop Detection** | Identifies repeating agent behavior patterns and injects corrective Telepathy alerts before runaway cycles waste resources. |
+| 📡 **Telepathy Alert Injection** | Watchdog findings broadcast as Telepathy events — all agents see health warnings without polling. |
+
+---
 
 ### ✅ v5.2.0 — Cognitive Memory & Universal Migration
 
@@ -123,34 +157,25 @@ v3.0: Role-scoped memory, agent registration/heartbeat, Telepathy (real-time cro
 
 ---
 
-## 📊 The State of Prism (v5.2)
+## 📊 The State of Prism (v5.5)
 
-With v5.2 shipped, Prism has crossed from retrieval into **cognition**:
+With v5.5 shipped, Prism has crossed from retrieval into **cognition**:
 
 - **Cognitive** — Ebbinghaus decay + context-boosted retrieval = memory that knows what matters *right now*.
 - **Zero Cold-Start** — Universal Migration imports years of Claude/Gemini/ChatGPT history on day one.
 - **Scale** — TurboQuant 10× compression + Deep Storage Purge. Decades of session history on a laptop.
+- **Convergent** — CRDT OR-Map handoff merging. Multiple agents, zero conflicts.
+- **Autonomous** — Web Scholar researches while you sleep. Task-aware, Hivemind-integrated.
+- **Hardened** — Transactional migrations, graceful shutdown, thundering herd prevention.
 - **Quality** — Interactive Knowledge Graph Editor + Behavioral Memory that learns from mistakes.
-- **Reliability** — 352 passing tests across 15 suites. Hardened auto-load hooks for Claude Code & Gemini.
+- **Reliability** — 374 passing tests across 17 suites. Hardened auto-load hooks for Claude Code & Gemini.
 - **Observability** — OpenTelemetry span waterfalls for every tool call, LLM hop, and background worker.
 - **Multimodal** — VLM auto-captioning turns screenshots into semantically searchable memory.
 - **Security** — SQL injection prevention via column allowlists on all dynamic query paths.
 
 ---
 
-### ✅ v5.4.0 — Concurrency, Automation & Autonomous Research
-
-| Feature | Detail |
-|---------|--------|
-| 🔄 **CRDT Handoff Merging** | Custom OR-Map engine replaces strict OCC rejection. Add-Wins OR-Set for arrays (`open_todos`), Last-Writer-Wins for scalars. 3-way merge via `getHandoffAtVersion()`. `disable_merge` bypass for strict mode. |
-| ⏰ **Background Purge Scheduler** | Unified `setInterval` loop (default: 12h) runs TTL sweep, importance decay, auto-compaction, and deep storage purge. Dashboard status card. `PRISM_SCHEDULER_ENABLED` / `PRISM_SCHEDULER_INTERVAL_MS`. |
-| 🌐 **Autonomous Web Scholar** | Brave Search → Firecrawl scrape → LLM synthesis → Prism ledger injection. Task-aware topic selection biases toward active Hivemind agent tasks. Reentrancy guard, 15K content cap, configurable schedule. |
-| 🐝 **Scholar ↔ Hivemind** | Scholar registers as `scholar` role, emits pipeline-stage heartbeats, broadcasts Telepathy alerts on completion. Zero overhead when Hivemind is off. |
-| 📖 **Architecture Docs** | 3 new sections in `docs/ARCHITECTURE.md` with mermaid diagrams covering Hivemind, Scheduler, and Scholar. |
-
----
-
-## 🗺️ Next on the Horizon — v5.5
+## 🗺️ Next on the Horizon — v5.6
 
 The next major frontier: **Mobile & Advanced Cognition**.
 
@@ -165,11 +190,11 @@ The next major frontier: **Mobile & Advanced Cognition**.
 2. Service worker + offline cache for read-only access
 3. Push notifications via Web Push API for Telepathy events
 
-### 🧠 Superposed Memory (SDM)
+### 🧠 Full Superposed Memory (SDM)
 
 **Problem:** Semantic search requires embedding every query and scanning all vectors — O(n) at scale.
 
-**Solution:** Sparse Distributed Memory (Kanerva, 1988) — store patterns in a superposed address space for O(1) retrieval via correlation. No index, no ANN, just ask the vector.
+**Solution:** Sparse Distributed Memory (Kanerva, 1988) — store patterns in a superposed address space for O(1) retrieval via correlation. No index, no ANN, just ask the vector. Foundation shipped in v5.5 (typed-array decoder, GC-free hot loop); full Hamming-space address mapping coming in v5.6.
 
 ---
 
