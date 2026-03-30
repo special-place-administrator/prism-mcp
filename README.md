@@ -486,8 +486,18 @@ Soft/hard delete (Art. 17), full ZIP export (Art. 20), API key redaction, per-pr
 
 ## 🆕 What's New
 
-### v5.5 — Architectural Hardening ✅
-> **Current stable release.** Zero-dependency, production-grade reliability improvements.
+### v6.1 — Cognitive Load & Semantic Search ✅
+> **Current stable release.** Transforms Prism from a simple passive database into a highly intuitive active memory graph.
+
+- 🧠 **Smart Memory Merge UI** — Dynamically merge duplicate knowledge nodes right from the Graph Editor. "Knowledge Gardening" made effortless.
+- ✨ **Semantic Search Highlighting** — Native RegEx mapping that visually wraps the exact reason a vector result was retrieved during a search.
+- 📊 **Deep Purge Visualization** — A zero-overhead "Memory Density" analytic providing instant signal-to-noise ratio visibility (Graduated ideas vs raw concepts).
+- 🛡️ **Context-Boosted Search** — Biases semantic queries by intelligently interleaving your current project workspace.
+
+![Prism v6 Features](docs/v6_cognitive_load_dashboard.png)
+
+### v5.5 — Architectural Hardening
+> Zero-dependency, production-grade reliability improvements.
 
 - 🛡️ **Transactional Migrations** — SQLite DDL rebuilds are wrapped in explicit `BEGIN/COMMIT` blocks. A crash mid-migration can no longer corrupt your schema or lose handoff state.
 - 🛑 **Graceful Shutdown Registry** — `BackgroundTaskRegistry` uses a 5-second `Promise.race()` to await all in-flight flushes (embeddings, SDM writes, OTel spans) before the process exits. No more orphaned I/O.
@@ -742,13 +752,13 @@ Prism is evolving from smart session logging toward a **cognitive memory archite
 
 > **[Full ROADMAP.md →](ROADMAP.md)**
 
-**Shipped — v5.5:**
-- 🛡️ Transactional migrations, graceful shutdown registry, thundering herd prevention, SDM decoder GC optimization
+### v6.2: The "Synthesize & Prune" Phase
+The v6.1 update laid the groundwork for Semantic Vector Search and basic Knowledge Gardening. The v6.2 phase aims to turn the collected data into proactive intelligence, moving the dashboard from a passive storage viewer into an active, self-organizing Mind Palace.
 
-**Next — v5.6:**
-- 🧠 **Full Superposed Memory (SDM)** — O(1) semantic retrieval via Hamming correlation, no ANN index needed
-- 🔮 **Intuitive Recall** — proactive surfacing of relevant past context without explicit `session_search_memory` calls
-- 📊 **Radar 2.0** — richer Hivemind dashboard with agent task graphs and dependency visualization
+1. 🕸️ **Automated Edge Synthesis (The "Dream" Procedure):** A background routine that runs on the graph payload to find semantically similar but disconnected nodes via Cosine Similarity. It highlights potential ghostly edges in the UI, empowering the system to autonomously suggest new mental models instead of waiting for the user to connect the dots manually.
+2. 🗓️ **Temporal Decay Heatmaps (Visualizing the Ebbinghaus Curve):** A UI overlay toggle where un-accessed nodes dynamically desaturate or physically "fade" while Graduated nodes (Score >= 7) stay vibrant longer. This makes the "Deep Purge" decision-making visceral: if the graph looks gray, trigger a learning session or a cleanup.
+3. 📝 **Active Recall Prompt Generation (Knowledge Activation):** A "Test Me" utility in the `nodeEditorPanel`. Using a node's semantic neighbors, the dashboard generates synthetic quizzes to ensure context retention, pushing the product away from pure "storage" into genuine "active learning" capabilities.
+4. 📦 **Zero-Dependency "Prism-Port" (Export & Interop):** A one-click "Export Vault" Graph-to-Markdown feature that compiles a `.zip` of linked `.md` chunks supporting Wikilinks `[[Node]]` integration with Obsidian/Logseq—honoring full data sovereignty.
 
 ---
 
