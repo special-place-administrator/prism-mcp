@@ -10,7 +10,7 @@
 
 **Your AI agent forgets everything between sessions. Prism fixes that.**
 
-One command. Persistent memory. Zero cloud dependencies.
+One command. Persistent memory. Local-first by default. Optional cloud power-ups.
 
 ```bash
 npx -y prism-mcp-server
@@ -61,9 +61,12 @@ Add to your MCP client config (`claude_desktop_config.json`, `.cursor/mcp.json`,
 }
 ```
 
-**That's it.** Restart your client. All 30+ tools are available. Dashboard at `http://localhost:3000`.
+> **Note on Windows/Restricted Shells:** If your MCP client complains that `npx` is not found, use the absolute path to your node binary (e.g. `C:\Program Files\nodejs\npx.cmd`) or install globally with caution.
 
-> 🔑 **API Key Requirements:** Need semantic search, Morning Briefings, or auto-compaction? Provide a `GOOGLE_API_KEY` (Gemini) or equivalent. Want Web Scholar to search the live internet? Provide a `BRAVE_API_KEY`. Without keys, Prism still works but falls back to local keyword search (FTS5). See [Environment Variables](#environment-variables).
+**That's it.** Restart your client. All tools are available. Dashboard at `http://localhost:3000`. 
+*(Note: The MCP server automatically starts this UI on port 3000 when connected. If you have a Next.js/React app running, port 3000 might already be in use.)*
+
+> 🔑 **API Key Requirements:** The core Mind Palace (SQLite/FTS5) works 100% offline. However, if you need semantic search, Morning Briefings, or auto-compaction, provide a `GOOGLE_API_KEY` (Gemini) or equivalent. Want Web Scholar to search the live internet? Provide a `BRAVE_API_KEY`. See [Environment Variables](#environment-variables).
 
 ---
 
@@ -180,168 +183,23 @@ npx -y prism-mcp-server universal-import --format gemini --path ./gemini_history
 </details>
 
 <details>
-<summary><strong>Claude Code — Lifecycle Hooks (Auto-Load & Auto-Save)</strong></summary>
+<summary><strong>Claude Code — Lifecycle Autoload (.clauderules)</strong></summary>
 
-Claude Code supports `SessionStart` and `Stop` hooks that force the agent to load/save Prism context automatically.
+Claude Code naturally picks up MCP tools by adding them to your workspace `.clauderules`. Simply add:
 
-### 1. Create the Hook Script
-
-Save as `~/.claude/mcp_autoload_hook.py`:
-
-```python
-#!/usr/bin/env python3
-import json, sys
-
-def main():
-    print(json.dumps({
-        "continue": True,
-        "suppressOutput": True,
-        "systemMessage": (
-            "## First Action\n"
-            "Call `mcp__prism-mcp__session_load_context(project='my-project', level='deep')` "
-            "before responding to the user. Do not generate any text before calling this tool."
-        )
-    }))
-
-if __name__ == "__main__":
-    main()
+```markdown
+Always start the conversation by calling `mcp__prism-mcp__session_load_context(project='my-project', level='deep')`.
+When wrapping up, always call `mcp__prism-mcp__session_save_ledger` and `mcp__prism-mcp__session_save_handoff`.
 ```
 
-### 2. Configure `settings.json`
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 /Users/you/.claude/mcp_autoload_hook.py",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 -c \"import json; print(json.dumps({'continue': True, 'suppressOutput': True, 'systemMessage': 'MANDATORY END WORKFLOW: 1) Call mcp__prism-mcp__session_save_ledger with project and summary. 2) Call mcp__prism-mcp__session_save_handoff with expected_version set to the loaded version.'}))\""
-          }
-        ]
-      }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "mcp__prism-mcp__session_load_context",
-      "mcp__prism-mcp__session_save_ledger",
-      "mcp__prism-mcp__session_save_handoff",
-      "mcp__prism-mcp__knowledge_search",
-      "mcp__prism-mcp__session_search_memory"
-    ]
-  }
-}
-```
-
-### Troubleshooting
-
-- **Hook not firing?** Check `timeout` — if your script takes too long, Claude ignores it.
-- **"Tool not available"?** This is a hallucination. Ensure `permissions.allow` exactly matches the double-underscore format.
+> **Format Note:** Claude automatically wraps MCP tools with double underscores (`mcp__prism-mcp__...`), while most other clients use single underscores (`mcp_prism-mcp_...`). Prism's backend natively handles both formats seamlessly.
 
 </details>
 
 <details id="antigravity-auto-load">
-<summary><strong>Gemini / Antigravity — Three-Layer Auto-Load (Battle-Tested ✅)</strong></summary>
+<summary><strong>Gemini / Antigravity — Prompt Auto-Load</strong></summary>
 
-Gemini-based agents (including Google's Antigravity IDE) use a **three-layer architecture** for reliable auto-load, proven over **14+ iterations** of prompt engineering (March 2026).
-
-### Architecture
-
-| Layer | File | Purpose |
-|-------|------|---------|
-| **1. User Rules** | `~/.gemini/GEMINI.md` | Slim ~10-line directive injected verbatim into system prompt |
-| **2. Cross-Tool Rules** | `~/.gemini/AGENTS.md` | Reinforcement for multi-client setups (Antigravity + Cursor) |
-| **3. Skill** | `.agent/skills/prism-startup/SKILL.md` | Full startup procedure with greeting detection and context echo |
-| **Server Fallback** | Built into `server.ts` (v5.2.1) | Deferred auto-push via `sendLoggingMessage` if model doesn't comply within 10s |
-
-### Layer 1: User Rules
-
-Create `~/.gemini/GEMINI.md`:
-
-```markdown
-# Startup — MANDATORY
-
-Your first action in every conversation is a tool call. Zero text before it.
-
-Tool: mcp_prism-mcp_session_load_context
-Args: project="my-project", level="deep"
-
-After success: echo agent identity, last summary, open TODOs, session version.
-If the call fails: say "Prism load failed — retrying" and try ONE more time.
-```
-
-### Layer 2: Cross-Tool Reinforcement
-
-Create `~/.gemini/AGENTS.md`:
-
-```markdown
-# Session Memory
-Every conversation starts with: mcp_prism-mcp_session_load_context(project="my-project", level="deep")
-Echo result: agent identity, TODOs, session version.
-```
-
-### Layer 3: Prism Startup Skill
-
-Create `.agent/skills/prism-startup/SKILL.md` (or `.agents/skills/`) in your project or global config. This is a structured skill file that Antigravity loads with higher priority than plain rules. It includes:
-
-- Greeting detection (fires on "hi", "hello", etc.)
-- Full tool call instructions with error handling
-- Context echo template (agent identity, TODOs, version)
-- Startup block display
-
-### Server-Side Fallback (v5.2.1)
-
-If the model ignores all three layers, Prism's server pushes context automatically:
-
-1. After storage warmup, a 10-second timer starts
-2. If `session_load_context` hasn't been called by then, the server pushes context via `sendLoggingMessage`
-3. If the client already called the tool, the push is silently skipped (zero impact on Claude CLI)
-
-This ensures context is always available, even with non-compliant models.
-
-### Why This Architecture Works
-
-- **Gemini uses single underscores** for MCP tools (`mcp_prism-mcp_...`) vs Claude's double underscores
-- **Slim rules** (~10 lines) avoid triggering adversarial "tool not found" reasoning
-- **Skills have dedicated 3-level loading** in Antigravity — higher compliance than plain rules
-- **Server fallback** catches the remaining edge cases without affecting well-behaved clients
-- **Positive "First Action" framing** outperforms negative constraint lists
-
-### Antigravity UI Caveat
-
-Antigravity **does not visually render MCP tool output blocks** in the chat UI. The tool executes successfully, but the user sees nothing. All three layers instruct the agent to **echo context in its text reply**.
-
-### Session End Workflow
-
-Tell the agent: *"Wrap up the session."* It should execute:
-
-1. `session_save_ledger` — append immutable work log (summary, decisions, files changed)
-2. `session_save_handoff` — upsert project state with `expected_version` for OCC
-
-> **Tip:** Include session-end instructions in your `GEMINI.md` or ask the agent to save when you're done.
-
-### Platform Gotchas
-
-- **`replace_file_content` silently fails** on `~/.gemini/GEMINI.md` in some environments — use `write_to_file` with overwrite instead
-- **Multiple GEMINI.md locations** can conflict: global (`~/.gemini/`), workspace, and User Rules in the Antigravity UI. Keep them synchronized
-- **Camoufox/browser tools** called at startup spawn visible black windows — never call browser tools during greeting handlers
-- **`connection closed: EOF` after config changes** — Antigravity does not hot-reload `mcp_config.json`. If a server crashes on first boot (wrong path, missing build), the transport is marked "Closed" permanently. Fix the config, then **restart the IDE** — it will not attempt to reconnect on its own
-- **Clone & Build: use `dist/server.js`** — If you use the "Clone & Build" setup, you must point to the compiled `dist/server.js`, not `src/index.js`. Running `node src/index.js` crashes immediately, which causes the EOF loop above
+See the [Gemini Setup Guide](docs/SETUP_GEMINI.md) for the proven three-layer prompt architecture to ensure reliable session auto-loading.
 
 </details>
 
@@ -445,7 +303,7 @@ A gorgeous glassmorphism UI at `localhost:3000` that lets you see exactly what y
 ![Mind Palace Dashboard](docs/mind-palace-dashboard.png)
 
 ### 🧬 10× Memory Compression
-Powered by a pure TypeScript port of Google's TurboQuant (ICLR 2026), Prism compresses 768-dim embeddings from **3,072 bytes → ~400 bytes** — enabling decades of session history on a standard laptop. No native modules. No vector database required.
+Powered by a pure TypeScript port of Google's TurboQuant (Inspired by ICLR), Prism compresses 768-dim embeddings from **3,072 bytes → ~400 bytes** — enabling decades of session history on a standard laptop. No native modules. No vector database required.
 
 ### 🐝 Multi-Agent Hivemind
 Multiple agents (dev, QA, PM) can work on the same project with **role-isolated memory**. Agents discover each other automatically, share context in real-time via Telepathy sync, and see a team roster during context loading.
@@ -551,6 +409,13 @@ Soft/hard delete (Art. 17), full ZIP export (Art. 20), API key redaction, per-pr
 ---
 
 ## 🔧 Tool Reference
+
+Prism ships 30+ tools, but **90% of your workflow only requires the Big Three**:
+1. `session_load_context` — Run this at the start of a session.
+2. `session_save_ledger` — Run this at the end to record what you did.
+3. `knowledge_search` — Run this to find old context.
+
+*A full breakdown of all available tools is documented below:*
 
 <details>
 <summary><strong>Session Memory & Knowledge (12 tools)</strong></summary>
@@ -742,7 +607,7 @@ Prism is evolving from smart session logging toward a **cognitive memory archite
 | **v7.x** | Affect-Tagged Memory — sentiment shapes what gets recalled | Affect-modulated retrieval (neuroscience) | 🔭 Horizon |
 | **v8+** | Zero-Search Retrieval — no index, no ANN, just ask the vector | Holographic Reduced Representations | 🔭 Horizon |
 
-> Informed by LeCun's "Why AI Systems Don't Learn" (Dupoux, LeCun, Malik — March 2026) and Kanerva's SDM.
+> Informed by LeCun's "Why AI Systems Don't Learn" (Dupoux, LeCun, Malik) and Kanerva's SDM.
 
 ---
 
