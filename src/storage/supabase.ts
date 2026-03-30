@@ -97,8 +97,15 @@ export class SupabaseStorage implements StorageBackend {
     await supabasePatch("session_ledger", data, { id: `eq.${id}` });
   }
 
-  async getLedgerEntries(params: Record<string, string>): Promise<unknown[]> {
-    const result = await supabaseGet("session_ledger", params);
+  async getLedgerEntries(params: Record<string, any>): Promise<unknown[]> {
+    const { ids, ...restParams } = params;
+    
+    // Construct PostgREST 'in.' payload for array of ids if present
+    if (ids && Array.isArray(ids) && ids.length > 0) {
+      restParams.id = `in.(${ids.join(",")})`;
+    }
+
+    const result = await supabaseGet("session_ledger", restParams);
     return Array.isArray(result) ? result : [];
   }
 
@@ -126,6 +133,22 @@ export class SupabaseStorage implements StorageBackend {
       user_id: `eq.${userId}`,
     });
     debugLog(`[SupabaseStorage] Hard-deleted ledger entry ${id}`);
+  }
+
+  async updateLastAccessed(ids: string[]): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    const now = new Date().toISOString();
+    
+    try {
+      await supabasePatch("session_ledger", {
+        last_accessed_at: now
+      }, {
+        id: `in.(${ids.join(",")})`
+      });
+      debugLog(`[SupabaseStorage] Updated last_accessed_at for ${ids.length} entries`);
+    } catch (err) {
+      console.warn(`[SupabaseStorage] Failed to update last_accessed_at:`, err);
+    }
   }
 
   // ─── Handoff Operations ────────────────────────────────────
@@ -204,6 +227,7 @@ export class SupabaseStorage implements StorageBackend {
       p_query_text: params.queryText || null,
       p_limit: Math.min(params.limit, 50),
       p_user_id: params.userId,
+      p_role: params.role || null,  // v6.0: Hivemind role-scoping
     });
 
     const data = Array.isArray(result) ? result[0] : result;
@@ -221,18 +245,105 @@ export class SupabaseStorage implements StorageBackend {
     limit: number;
     similarityThreshold: number;
     userId: string;
-    role?: string | null;  // v3.0: optional role filter
+    role?: string | null;
   }): Promise<SemanticSearchResult[]> {
-    const result = await supabaseRpc("semantic_search_ledger", {
-      p_query_embedding: params.queryEmbedding,
-      p_project: params.project || null,
-      p_limit: Math.min(params.limit, 20),
-      p_similarity_threshold: params.similarityThreshold,
-      p_user_id: params.userId,
-    });
+    // ─── TIER 1: Native pgvector cosine search via Supabase RPC ─────────
+    //
+    // REVIEWER NOTE (v6.1): SUPABASE THREE-TIER SEARCH ARCHITECTURE
+    //
+    //   Tier 1: `semantic_search_ledger` Postgres RPC (pgvector)
+    //     - Fastest: GPU-accelerated HNSW index on Supabase Pro/Team plans
+    //     - Falls through when: RPC doesn't exist, plan doesn't include pgvector,
+    //       or JWT doesn't have EXECUTE on the function
+    //
+    //   Tier 2: TurboQuant asymmetric search in JavaScript (mirrors SQLite)
+    //     - Fetches all embedding_compressed blobs via REST, scores in JS
+    //     - O(N) linear scan — acceptable for typical Prism dataset (<10K entries)
+    //     - Activated when: Tier 1 throws any error
+    //
+    //   Tier 3: Empty array (caller falls through to FTS5 keyword search)
+    //     - Both Tiers 1 and 2 failed — semantic search unavailable
+    try {
+      const result = await supabaseRpc("semantic_search_ledger", {
+        p_query_embedding: params.queryEmbedding,
+        p_project: params.project || null,
+        p_limit: Math.min(params.limit, 20),
+        p_similarity_threshold: params.similarityThreshold,
+        p_user_id: params.userId,
+        p_role: params.role || null,
+      });
+      return Array.isArray(result) ? result as SemanticSearchResult[] : [];
+    } catch (tier1Err) {
+      // ─── TIER 2 FALLBACK: TurboQuant JS-side scoring ─────────────────
+      debugLog(
+        `[SupabaseStorage] Tier-1 RPC failed, trying Tier-2 TurboQuant fallback: ` +
+        `${tier1Err instanceof Error ? tier1Err.message : String(tier1Err)}`
+      );
 
-    return Array.isArray(result) ? result as SemanticSearchResult[] : [];
+      try {
+        const { getDefaultCompressor, deserialize } = await import("../utils/turboquant.js");
+        const compressor = getDefaultCompressor();
+
+        // Parse the float32 query vector from the JSON string
+        const queryVec: number[] = JSON.parse(params.queryEmbedding);
+
+        // Fetch all entries that have TurboQuant compressed embeddings
+        const queryParams: Record<string, string> = {
+          user_id: `eq.${params.userId}`,
+          archived_at: "is.null",
+          deleted_at: "is.null",
+          embedding_compressed: "not.is.null",
+          select: "id,project,summary,decisions,files_changed,session_date,created_at,embedding_compressed,embedding_turbo_radius",
+          limit: "5000",  // Safety cap — Supabase default page size
+        };
+        if (params.project) queryParams.project = `eq.${params.project}`;
+        if (params.role)    queryParams.role    = `eq.${params.role}`;
+
+        const rows = await supabaseGet("session_ledger", queryParams) as Record<string, unknown>[];
+
+        const scored: SemanticSearchResult[] = [];
+        for (const row of (Array.isArray(rows) ? rows : [])) {
+          try {
+            const compressedBase64 = row.embedding_compressed as string;
+            const buf = Buffer.from(compressedBase64, "base64");
+            const compressed = deserialize(buf);
+            const similarity = compressor.asymmetricCosineSimilarity(queryVec, compressed);
+
+            if (similarity >= params.similarityThreshold) {
+              scored.push({
+                id: row.id as string,
+                project: row.project as string,
+                summary: row.summary as string,
+                similarity,
+                session_date: (row.session_date || row.created_at) as string,
+                decisions: Array.isArray(row.decisions) ? row.decisions as string[] : [],
+                files_changed: Array.isArray(row.files_changed) ? row.files_changed as string[] : [],
+              });
+            }
+          } catch {
+            // Skip entries with corrupt compressed data
+          }
+        }
+
+        scored.sort((a, b) => b.similarity - a.similarity);
+        debugLog(
+          `[SupabaseStorage] Tier-2 TurboQuant fallback: scored ${rows.length} entries, ` +
+          `${scored.length} above threshold`
+        );
+        return scored.slice(0, params.limit);
+      } catch (tier2Err) {
+        // Both tiers failed — return empty; caller falls through to FTS5
+        console.error(
+          `[SupabaseStorage] Both Tier-1 and Tier-2 search failed. ` +
+          `Tier-1: ${tier1Err instanceof Error ? tier1Err.message : String(tier1Err)}. ` +
+          `Tier-2: ${tier2Err instanceof Error ? tier2Err.message : String(tier2Err)}. ` +
+          `Tip: Ensure semantic_search_ledger RPC exists in your Supabase project.`
+        );
+        return [];
+      }
+    }
   }
+
 
   // ─── Compaction ────────────────────────────────────────────
 
@@ -298,7 +409,7 @@ export class SupabaseStorage implements StorageBackend {
       if (rows.length === 0) return null;
       return rows[0].snapshot as Record<string, unknown> || null;
     } catch (err) {
-      console.error(`[SupabaseStorage] Failed to get handoff at version ${version}: ${err}`);
+      console.error(`[SupabaseStorage] Failed to get handoff at version ${version}: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   }
@@ -792,12 +903,64 @@ export class SupabaseStorage implements StorageBackend {
 
   // ─── SDM Operations ──────────────────────────────────────────
 
+  // ── Base64 ↔ Float32Array Helpers ────────────────────────────
+  //
+  // The SDM counter matrix is ~30MB (10,000 × 768 × 4 bytes). We encode
+  // it as base64 TEXT for Supabase compatibility — Postgres `bytea` accepts
+  // this format, and the Supabase JS client serialises it transparently.
+  // At ~40MB after encoding, this is well within Postgres's 1GB row limit.
+
+  private arrayToBase64(arr: Float32Array): string {
+    const buffer = Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength);
+    return buffer.toString("base64");
+  }
+
+  private base64ToArray(base64: string): Float32Array {
+    const buffer = Buffer.from(base64, "base64");
+    return new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4);
+  }
+
   async loadSdmState(project: string): Promise<Float32Array | null> {
-    throw new Error("loading SDM state is not implemented for Supabase backend yet.");
+    const result = await supabaseGet("sdm_state", {
+      project: `eq.${project}`,
+      select: "counters",
+      limit: "1",
+    });
+
+    const rows = Array.isArray(result) ? result : [];
+    if (rows.length === 0) return null;
+
+    const row = rows[0] as Record<string, unknown>;
+    if (!row.counters || typeof row.counters !== "string") return null;
+
+    return this.base64ToArray(row.counters);
   }
 
   async saveSdmState(project: string, state: Float32Array): Promise<void> {
-    throw new Error("saving SDM state is not implemented for Supabase backend yet.");
+    const base64Content = this.arrayToBase64(state);
+    await supabasePost(
+      "sdm_state",
+      { project, counters: base64Content, updated_at: new Date().toISOString() },
+      { on_conflict: "project" },
+      { Prefer: "return=minimal,resolution=merge-duplicates" },
+    );
+  }
+
+  // ─── v6.1: Storage Hygiene ────────────────────────────────────
+
+  async vacuumDatabase(_opts: { dryRun: boolean }): Promise<{
+    sizeBefore: number;
+    sizeAfter: number;
+    message: string;
+  }> {
+    return {
+      sizeBefore: 0,
+      sizeAfter: 0,
+      message:
+        "VACUUM is not available via the Supabase REST API. " +
+        "To reclaim space on your hosted database, go to the Supabase Dashboard → " +
+        "Database → Maintenance and run VACUUM ANALYZE there.",
+    };
   }
 
   async getAllProjectEmbeddings(project: string): Promise<Array<{ id: string, summary: string, embedding_compressed: string }>> {
@@ -836,6 +999,17 @@ export class SupabaseStorage implements StorageBackend {
 
   async decayLinks(_olderThanDays: number): Promise<number> {
     return 0; // No links to decay
+  }
+
+  async findKeywordOverlapEntries(
+    _excludeId: string,
+    _project: string,
+    _keywords: string[],
+    _userId: string,
+    _minSharedKeywords?: number,
+    _limit?: number,
+  ): Promise<Array<{ id: string; shared_count: number }>> {
+    return []; // Graceful no-op — graph features are SQLite-only for now
   }
 
   async backfillLinks(_project: string): Promise<{ temporal: number; keyword: number; provenance: number }> {

@@ -381,6 +381,32 @@ export const SESSION_BACKFILL_EMBEDDINGS_TOOL: Tool = {
   },
 };
 
+// ─── v6.0 Phase 3: Backfill Links Tool ───────────────────────
+
+export const SESSION_BACKFILL_LINKS_TOOL: Tool = {
+  name: "session_backfill_links",
+  description:
+    "Retroactively create graph edges (memory links) for all existing entries in a project. " +
+    "This builds the associative memory graph from your existing session history.\n\n" +
+    "Three strategies are run:\n" +
+    "1. **Temporal Chaining**: Links consecutive entries within the same conversation\n" +
+    "2. **Keyword Overlap**: Links entries sharing ≥3 keywords (bidirectional)\n" +
+    "3. **Provenance**: Links rollup summaries to their archived originals\n\n" +
+    "All strategies use INSERT OR IGNORE — safe to re-run multiple times.\n\n" +
+    "**When to use:** Run once after upgrading to v6.0 to populate the graph for existing memories. " +
+    "New entries are auto-linked on save (no manual action needed).",
+  inputSchema: {
+    type: "object",
+    properties: {
+      project: {
+        type: "string",
+        description: "Project to backfill links for. Required.",
+      },
+    },
+    required: ["project"],
+  },
+};
+
 // ─── Type Guards ──────────────────────────────────────────────
 
 export function isKnowledgeForgetArgs(
@@ -488,6 +514,17 @@ export function isBackfillEmbeddingsArgs(
   dry_run?: boolean;
 } {
   return typeof args === "object" && args !== null;
+}
+
+export function isBackfillLinksArgs(
+  args: unknown
+): args is { project: string } {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    "project" in args &&
+    typeof (args as { project: string }).project === "string"
+  );
 }
 
 export function isSessionLoadContextArgs(
@@ -1180,5 +1217,42 @@ export function isSessionIntuitiveRecallArgs(
   const a = args as Record<string, unknown>;
   if (typeof a.project !== "string") return false;
   if (typeof a.query !== "string") return false;
+  return true;
+}
+
+// ─── v6.1: Storage Hygiene — VACUUM ──────────────────────────────────────────
+
+export const MAINTENANCE_VACUUM_TOOL: Tool = {
+  name: "maintenance_vacuum",
+  description:
+    "Reclaim disk space after large purge operations by running VACUUM on the local SQLite database.\n\n" +
+    "Best called after `deep_storage_purge` removes many entries — SQLite reclaims page allocations " +
+    "only when explicitly vacuumed, so the file size stays the same until you call this tool.\n\n" +
+    "For remote (Supabase) backends, returns guidance on triggering maintenance via the dashboard.\n\n" +
+    "**Note:** On large databases this may take up to 60 seconds. The tool runs synchronously " +
+    "so you will know when it is safe to proceed.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      dry_run: {
+        type: "boolean",
+        description:
+          "If true, reports the current database file size without running VACUUM. " +
+          "Use this to preview how large the database is before committing to a full vacuum.",
+      },
+    },
+  },
+};
+
+export interface MaintenanceVacuumArgs {
+  dry_run?: boolean;
+}
+
+export function isMaintenanceVacuumArgs(
+  args: unknown
+): args is MaintenanceVacuumArgs {
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (a.dry_run !== undefined && typeof a.dry_run !== "boolean") return false;
   return true;
 }

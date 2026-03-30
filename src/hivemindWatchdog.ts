@@ -110,13 +110,13 @@ export function startWatchdog(config?: Partial<WatchdogConfig>): () => void {
 
   watchdogInterval = setInterval(() => {
     runWatchdogSweep(cfg).catch(err => {
-      console.error(`[Watchdog] Sweep error (non-fatal): ${err}`);
+      console.error(`[Watchdog] Sweep error (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     });
   }, cfg.intervalMs);
 
   // Run an immediate first sweep
   runWatchdogSweep(cfg).catch(err => {
-    console.error(`[Watchdog] Initial sweep error (non-fatal): ${err}`);
+    console.error(`[Watchdog] Initial sweep error (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   });
 
   console.error(`[Watchdog] 🐝 Started (interval=${cfg.intervalMs}ms, stale=${cfg.staleThresholdMin}m, frozen=${cfg.frozenThresholdMin}m)`);
@@ -177,7 +177,7 @@ export async function runWatchdogSweep(
           `[Watchdog] ⚫ Agent "${agent.role}" on "${agent.project}" pruned (${Math.floor(minutesSinceHeartbeat)}m offline)`
         );
       } catch (err) {
-        console.error(`[Watchdog] Prune failed for ${agent.project}/${agent.role}: ${err}`);
+        console.error(`[Watchdog] Prune failed for ${agent.project}/${agent.role}: ${err instanceof Error ? err.message : String(err)}`);
       }
       continue; // Agent removed, no further processing
     }
@@ -254,7 +254,7 @@ export async function runWatchdogSweep(
           agent.project, agent.user_id, agent.role, newStatus
         );
       } catch (err) {
-        console.error(`[Watchdog] Status update failed for ${agent.project}/${agent.role}: ${err}`);
+        console.error(`[Watchdog] Status update failed for ${agent.project}/${agent.role}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }

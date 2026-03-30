@@ -45,7 +45,7 @@ async function hivemindRegister(topic: string): Promise<void> {
     });
     debugLog(`[WebScholar] 🐝 Registered on Hivemind Radar (topic: ${topic})`);
   } catch (err) {
-    debugLog(`[WebScholar] Hivemind registration failed (non-fatal): ${err}`);
+    debugLog(`[WebScholar] Hivemind registration failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -87,7 +87,7 @@ async function hivemindBroadcast(topic: string, articleCount: number): Promise<v
       `${articleCount} articles synthesized. Active agents will see results in knowledge search.`
     );
   } catch (err) {
-    debugLog(`[WebScholar] Telepathy broadcast failed (non-fatal): ${err}`);
+    debugLog(`[WebScholar] Telepathy broadcast failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -125,7 +125,7 @@ async function selectTopic(): Promise<string> {
       return chosen;
     }
   } catch (err) {
-    debugLog(`[WebScholar] Task-aware selection failed (non-fatal), using random: ${err}`);
+    debugLog(`[WebScholar] Task-aware selection failed (non-fatal), using random: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return randomPick;

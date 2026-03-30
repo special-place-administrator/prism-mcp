@@ -22,6 +22,74 @@ import { PRISM_USER_ID, PRISM_SCHOLAR_ENABLED, PRISM_SCHOLAR_INTERVAL_MS } from 
 import { debugLog } from "./utils/logger.js";
 import { runWebScholar } from "./scholar/webScholar.js";
 import { getAllActiveSdmProjects, getSdmEngine } from "./sdm/sdmEngine.js";
+import { supabasePost, supabasePatch, supabaseDelete, supabaseRpc } from "./utils/supabaseApi.js";
+
+// ─── Distributed Lock Helpers (v6.2) ─────────────────────────────────────────
+//
+// These helpers provide backend-aware distributed locking for the scheduler.
+//
+//   SQLite path: uses the existing configStorage key (local file lock).
+//     - Correct for single-node Claude Desktop deployments.
+//     - Each process is the only writer to its own db file.
+//
+//   Supabase path: uses the `scheduler_locks` table (v32 migration).
+//     - Enables multi-node Hivemind deployments (multiple Prism instances
+//       sharing one Supabase project) to elect a single sweep leader.
+//     - Atomic INSERT ... ON CONFLICT DO UPDATE WHERE expires_at < NOW()
+//       is the standard Postgres advisory-lock-without-advisory-locks pattern.
+//     - 1-minute TTL on expires_at ensures zombie-lock auto-recovery if a
+//       node crashes without releasing.
+
+const DISTRIBUTED_LOCK_KEY    = "scheduler_main" as const;
+const DISTRIBUTED_LOCK_TTL_MS = 60_000;  // 1 minute — zombie-lock horizon
+const HEARTBEAT_INTERVAL_MS   = 30_000;  // 30 seconds
+
+// Fix: process.pid is often 1 in Docker/K8s. Generate a cryptographically
+// unique instance ID on startup to prevent lock collisions and accidental
+// steal/release across containerized replicas.
+const INSTANCE_ID = `prism_${process.pid}_${Math.random().toString(36).substring(2, 9)}`;
+
+/** Try to acquire the distributed scheduler lock for Supabase backend.
+ *  Returns true if acquired, false if another active node holds it. */
+async function acquireSupabaseLock(pid: string): Promise<boolean> {
+  try {
+    const result = await supabaseRpc("prism_acquire_lock", {
+      p_key: DISTRIBUTED_LOCK_KEY,
+      p_pid: pid,
+      p_ttl_ms: DISTRIBUTED_LOCK_TTL_MS
+    });
+    return result === true;
+  } catch (err) {
+    debugLog(`[Scheduler] Supabase lock acquire failed (non-fatal, will skip sweep): ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
+/** Extend the Supabase lock expiry (heartbeat). */
+async function heartbeatSupabaseLock(pid: string): Promise<void> {
+  const expiresAt = new Date(Date.now() + DISTRIBUTED_LOCK_TTL_MS).toISOString();
+  try {
+    await supabasePatch(
+      "scheduler_locks",
+      { expires_at: expiresAt },
+      { key: `eq.${DISTRIBUTED_LOCK_KEY}`, pid: `eq.${pid}` }
+    );
+  } catch (err) {
+    debugLog(`[Scheduler] Supabase lock heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Release the Supabase lock. */
+async function releaseSupabaseLock(pid: string): Promise<void> {
+  try {
+    await supabaseDelete(
+      "scheduler_locks",
+      { key: `eq.${DISTRIBUTED_LOCK_KEY}`, pid: `eq.${pid}` }
+    );
+  } catch (err) {
+    debugLog(`[Scheduler] Supabase lock release failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
 // ─── Configuration ───────────────────────────────────────────
 
@@ -85,6 +153,7 @@ export interface SchedulerSweepResult {
     compaction: { ran: boolean; projectsCompacted: number; error?: string };
     deepPurge: { ran: boolean; purged: number; reclaimedBytes: number; error?: string };
     sdmFlush: { ran: boolean; projectsFlushed: number; error?: string };
+    linkDecay: { ran: boolean; linksDecayed: number; error?: string };
   };
 }
 
@@ -108,7 +177,7 @@ export function startScheduler(config?: Partial<SchedulerConfig>): () => void {
   const runLoop = () => {
     runSchedulerSweep(cfg)
       .catch(err => {
-        console.error(`[Scheduler] Sweep error (non-fatal): ${err}`);
+        console.error(`[Scheduler] Sweep error (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
       })
       .finally(() => {
         schedulerInterval = setTimeout(runLoop, cfg.intervalMs);
@@ -176,7 +245,7 @@ export function startScholarScheduler(): () => void {
   const runLoop = () => {
     runWebScholar()
       .catch(err => {
-        console.error(`[WebScholar] Sweep error: ${err}`);
+        console.error(`[WebScholar] Sweep error: ${err instanceof Error ? err.message : String(err)}`);
       })
       .finally(() => {
         scholarInterval = setTimeout(runLoop, PRISM_SCHOLAR_INTERVAL_MS);
@@ -227,6 +296,7 @@ export async function runSchedulerSweep(
       compaction: { ran: false, projectsCompacted: 0 },
       deepPurge: { ran: false, purged: 0, reclaimedBytes: 0 },
       sdmFlush: { ran: false, projectsFlushed: 0 },
+      linkDecay: { ran: false, linksDecayed: 0 },
     },
   };
 
@@ -234,7 +304,57 @@ export async function runSchedulerSweep(
 
   const storage = await getStorage();
 
-  // ── Task 1: TTL Sweep ──────────────────────────────────────
+  // ─── Backend-Aware Distributed Lock (v6.2) ───────────────────────────────
+  //
+  //   SQLite: configStorage key in local JSON file (single-node, fast)
+  //   Supabase: scheduler_locks table (multi-node Hivemind safety)
+  //
+  const processId = INSTANCE_ID;
+  const isSupabase = process.env.PRISM_STORAGE_BACKEND === "supabase";
+  let heartbeatInterval: ReturnType<typeof setInterval>;
+
+  if (isSupabase) {
+    // Supabase path: distributed lock via scheduler_locks table
+    const acquired = await acquireSupabaseLock(processId);
+    if (!acquired) {
+      debugLog(`[Scheduler] Distributed lock held by another node. Skipping sweep.`);
+      return result;
+    }
+    debugLog(`[Scheduler] Distributed lock acquired (pid: ${processId})`);
+
+    // Heartbeat: renew every 30s so lock survives long compaction sweeps
+    heartbeatInterval = setInterval(() => {
+      heartbeatSupabaseLock(processId);
+    }, HEARTBEAT_INTERVAL_MS);
+  } else {
+    // SQLite path: existing local configStorage lock (unchanged behavior)
+    const lockKey = "scheduler_lock";
+    const now = Date.now();
+    const lockVal = await storage.getSetting(lockKey);
+
+    if (lockVal) {
+      try {
+        const lockData = JSON.parse(lockVal);
+        if (lockData.owner_id !== processId && now - lockData.locked_at < 1000 * 60 * 10) {
+          debugLog(`[Scheduler] Sweep locked by another instance (${lockData.owner_id}). Skipping.`);
+          return result;
+        }
+      } catch {
+        // Ignored parsing error — override stale lock
+      }
+    }
+
+    await storage.setSetting(lockKey, JSON.stringify({ locked_at: Date.now(), owner_id: processId }));
+
+    // Heartbeat: renew every 5 minutes (local file is cheap)
+    heartbeatInterval = setInterval(() => {
+      storage.setSetting(lockKey, JSON.stringify({ locked_at: Date.now(), owner_id: processId }))
+        .catch((e) => debugLog(`[Scheduler] Heartbeat set failed: ${e instanceof Error ? e.message : String(e)}`));
+    }, 1000 * 60 * 5);
+  }
+
+  try {
+    // ── Task 1: TTL Sweep ──────────────────────────────────────
   if (cfg.enableTTLSweep) {
     try {
       result.tasks.ttlSweep.ran = true;
@@ -257,12 +377,12 @@ export async function runSchedulerSweep(
             debugLog(`[Scheduler] TTL: expired ${expired} entries for "${project}" (>${ttlDays}d)`);
           }
         } catch (err) {
-          debugLog(`[Scheduler] TTL sweep failed for "${project}": ${err}`);
+          debugLog(`[Scheduler] TTL sweep failed for "${project}": ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     } catch (err) {
       result.tasks.ttlSweep.error = err instanceof Error ? err.message : String(err);
-      console.error(`[Scheduler] TTL sweep error: ${err}`);
+      console.error(`[Scheduler] TTL sweep error: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -277,12 +397,12 @@ export async function runSchedulerSweep(
           await storage.decayImportance(project, PRISM_USER_ID, cfg.decayDays);
           result.tasks.importanceDecay.projectsDecayed++;
         } catch (err) {
-          debugLog(`[Scheduler] Decay failed for "${project}": ${err}`);
+          debugLog(`[Scheduler] Decay failed for "${project}": ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     } catch (err) {
       result.tasks.importanceDecay.error = err instanceof Error ? err.message : String(err);
-      console.error(`[Scheduler] Importance decay error: ${err}`);
+      console.error(`[Scheduler] Importance decay error: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -316,13 +436,13 @@ export async function runSchedulerSweep(
             });
             result.tasks.compaction.projectsCompacted++;
           } catch (err) {
-            debugLog(`[Scheduler] Compaction failed for "${candidate.project}": ${err}`);
+            debugLog(`[Scheduler] Compaction failed for "${candidate.project}": ${err instanceof Error ? err.message : String(err)}`);
           }
         }
       }
     } catch (err) {
       result.tasks.compaction.error = err instanceof Error ? err.message : String(err);
-      console.error(`[Scheduler] Compaction error: ${err}`);
+      console.error(`[Scheduler] Compaction error: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -346,7 +466,7 @@ export async function runSchedulerSweep(
       }
     } catch (err) {
       result.tasks.deepPurge.error = err instanceof Error ? err.message : String(err);
-      console.error(`[Scheduler] Deep purge error: ${err}`);
+      console.error(`[Scheduler] Deep purge error: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -363,7 +483,7 @@ export async function runSchedulerSweep(
           await storage.saveSdmState(project, state);
           result.tasks.sdmFlush.projectsFlushed++;
         } catch (err) {
-          debugLog(`[Scheduler] SDM flush failed for "${project}": ${err}`);
+          debugLog(`[Scheduler] SDM flush failed for "${project}": ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -374,7 +494,35 @@ export async function runSchedulerSweep(
       }
     } catch (err) {
       result.tasks.sdmFlush.error = err instanceof Error ? err.message : String(err);
-      console.error(`[Scheduler] SDM flush error: ${err}`);
+      console.error(`[Scheduler] SDM flush error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // ── Task 6: Link Decay (v6.0 Phase 3) ──────────────────────
+  // Reduce strength of stale graph edges by -0.1 per sweep.
+  // Uses PRISM_LINK_DECAY_DAYS from config (default: 30).
+  try {
+    const { PRISM_LINK_DECAY_DAYS } = await import("./config.js");
+    if (PRISM_LINK_DECAY_DAYS > 0) {
+      result.tasks.linkDecay.ran = true;
+      const decayed = await storage.decayLinks(PRISM_LINK_DECAY_DAYS);
+      result.tasks.linkDecay.linksDecayed = decayed;
+      if (decayed > 0) {
+        debugLog(`[Scheduler] Link decay: weakened ${decayed} stale links (>${PRISM_LINK_DECAY_DAYS}d)`);
+      }
+    }
+  } catch (err) {
+    result.tasks.linkDecay.error = err instanceof Error ? err.message : String(err);
+    debugLog(`[Scheduler] Link decay error (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  } finally {
+    clearInterval(heartbeatInterval!);
+    // Release Supabase distributed lock explicitly so the next sweep
+    // on any node can start immediately (vs. waiting for expires_at).
+    if (isSupabase) {
+      await releaseSupabaseLock(processId);
+      debugLog(`[Scheduler] Distributed lock released (pid: ${processId})`);
     }
   }
 
@@ -399,6 +547,9 @@ export async function runSchedulerSweep(
   }
   if (result.tasks.sdmFlush.ran && result.tasks.sdmFlush.projectsFlushed > 0) {
     parts.push(`SDM:${result.tasks.sdmFlush.projectsFlushed} projects`);
+  }
+  if (result.tasks.linkDecay.ran && result.tasks.linkDecay.linksDecayed > 0) {
+    parts.push(`LinkDecay:${result.tasks.linkDecay.linksDecayed} links`);
   }
 
   const summaryLine = parts.length > 0

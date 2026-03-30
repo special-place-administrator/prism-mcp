@@ -140,6 +140,8 @@ import {
   SESSION_SAVE_EXPERIENCE_TOOL,
   KNOWLEDGE_UPVOTE_TOOL,
   KNOWLEDGE_DOWNVOTE_TOOL,
+  // v6.0: Associative Memory Graph tools
+  SESSION_BACKFILL_LINKS_TOOL,
 
   sessionSaveLedgerHandler,
   sessionSaveHandoffHandler,
@@ -150,6 +152,7 @@ import {
   compactLedgerHandler,
   sessionSearchMemoryHandler,
   backfillEmbeddingsHandler,
+  sessionBackfillLinksHandler,
   // ─── v2.0: Time Travel handlers ───
   memoryHistoryHandler,
   memoryCheckoutHandler,
@@ -174,6 +177,9 @@ import {
   // v5.1: Deep Storage Mode
   DEEP_STORAGE_PURGE_TOOL,
   deepStoragePurgeHandler,
+  // v6.1: Storage Hygiene
+  MAINTENANCE_VACUUM_TOOL,
+  maintenanceVacuumHandler,
   // ─── v3.0: Agent Hivemind tools ───
   AGENT_REGISTRY_TOOLS,
   agentRegisterHandler,
@@ -255,6 +261,10 @@ function buildSessionMemoryTools(autoloadList: string[]): Tool[] {
     DEEP_STORAGE_PURGE_TOOL,       // deep_storage_purge — purge float32 embeddings for compressed entries
     // ─── Phase 2: GDPR Export tool ───
     SESSION_EXPORT_MEMORY_TOOL,    // session_export_memory — full portability export (Article 20)
+    // ─── v6.0: Associative Memory Graph tools ───
+    SESSION_BACKFILL_LINKS_TOOL,   // session_backfill_links — retroactive graph edge creation
+    // ─── v6.1: Storage Hygiene tool ───
+    MAINTENANCE_VACUUM_TOOL,       // maintenance_vacuum — reclaim SQLite disk space post-purge
   ];
 }
 
@@ -842,6 +852,22 @@ export function createServer() {
             if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
             result = await deepStoragePurgeHandler(args); break;
 
+          // ─── v6.0: Associative Memory Graph Tools ───
+
+          case "session_backfill_links":
+            if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
+            result = await sessionBackfillLinksHandler(args); break;
+
+          case "session_backfill_embeddings":
+            if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
+            result = await backfillEmbeddingsHandler(args); break;
+
+          // ─── v6.1: Storage Hygiene ───
+
+          case "maintenance_vacuum":
+            if (!SESSION_MEMORY_ENABLED) throw new Error("Session memory not configured. Set SUPABASE_URL and SUPABASE_KEY.");
+            result = await maintenanceVacuumHandler(args); break;
+
           // ─── v3.0: Agent Hivemind Tools ───
 
           case "agent_register":
@@ -1051,7 +1077,7 @@ export async function startServer() {
         resolve();
       }, STORAGE_TIMEOUT_MS)),
     ]).catch(err => {
-      console.error(`[Prism] Storage pre-warm failed (non-fatal): ${err}`);
+      console.error(`[Prism] Storage pre-warm failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     });
 
     // ─── v4.1: Auto-Load via dynamic tool descriptions ──────────
@@ -1140,11 +1166,11 @@ export async function startServer() {
 
               console.error(`[Prism] Auto-pushed context for "${project}" (${defaultLevel})`);
             } catch (err) {
-              console.error(`[Prism] Auto-push failed for "${project}" (non-fatal): ${err}`);
+              console.error(`[Prism] Auto-push failed for "${project}" (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
             }
           }
         } catch (err) {
-          console.error(`[Prism] Auto-push storage error (non-fatal): ${err}`);
+          console.error(`[Prism] Auto-push storage error (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
         }
       }).catch(() => {/* storage warmup failed, auto-push gracefully skipped */});
     }
@@ -1170,12 +1196,12 @@ export async function startServer() {
                 `You may want to run session_load_context to sync up.`,
             });
           } catch (err) {
-            console.error(`[Telepathy] Failed to send notification: ${err}`);
+            console.error(`[Telepathy] Failed to send notification: ${err instanceof Error ? err.message : String(err)}`);
           }
         });
 
       } catch (err) {
-        console.error(`[Telepathy] SyncBus init failed (non-fatal): ${err}`);
+        console.error(`[Telepathy] SyncBus init failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
       }
     })();
   }
@@ -1186,7 +1212,7 @@ export async function startServer() {
   // init spawns child processes (lsof) and awaits storage.
   setTimeout(() => {
     startDashboardServer().catch(err => {
-      console.error(`[Dashboard] Mind Palace startup failed (non-fatal): ${err}`);
+      console.error(`[Dashboard] Mind Palace startup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     });
   }, 0);
 
@@ -1204,7 +1230,7 @@ export async function startServer() {
         loopThreshold: WATCHDOG_LOOP_THRESHOLD,
       });
     }).catch(err => {
-      console.error(`[Watchdog] Startup failed (non-fatal): ${err}`);
+      console.error(`[Watchdog] Startup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     });
   }
 
@@ -1218,7 +1244,7 @@ export async function startServer() {
         intervalMs: PRISM_SCHEDULER_INTERVAL_MS,
       });
     }).catch(err => {
-      console.error(`[Scheduler] Startup failed (non-fatal): ${err}`);
+      console.error(`[Scheduler] Startup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     });
   }
 
@@ -1229,7 +1255,7 @@ export async function startServer() {
     storageReady?.then(() => {
       startScholarScheduler();
     }).catch(err => {
-      console.error(`[WebScholar] Startup failed (non-fatal): ${err}`);
+      console.error(`[WebScholar] Startup failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     });
   }
 

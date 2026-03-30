@@ -22,7 +22,7 @@ import { toKeywordArray } from "../utils/keywordExtractor.js";
 import { getLLMProvider } from "../utils/llm/factory.js";
 import { getCurrentGitState, getGitDrift } from "../utils/git.js";
 import { getSetting, getAllSettings } from "../storage/configStorage.js";
-import { mergeHandoff, dbToHandoffSchema } from "../utils/crdtMerge.js";
+import { mergeHandoff, dbToHandoffSchema, sanitizeForMerge } from "../utils/crdtMerge.js";
 
 // ─── Phase 1: Explainability & Memory Lineage ────────────────
 // These utilities provide structured tracing metadata for search operations.
@@ -168,6 +168,34 @@ export async function sessionSaveLedgerHandler(args: unknown) {
     }
   }
 
+  // ─── v6.0 Phase 3: Fire-and-forget auto-linking ────────────
+  // Creates temporal (conversation chain) and keyword overlap (related_to)
+  // graph edges. Wrapped in setImmediate + try/catch so graph failures
+  // NEVER affect the primary MCP response path.
+  if (result) {
+    const savedEntry = Array.isArray(result) ? result[0] : result;
+    const autoLinkEntryId = (savedEntry as any)?.id;
+    if (autoLinkEntryId) {
+      setImmediate(() => {
+        import("../utils/autoLinker.js")
+          .then(({ autoLinkEntry }) =>
+            autoLinkEntry(
+              autoLinkEntryId,
+              project,
+              keywords,
+              conversation_id,
+              PRISM_USER_ID,
+              storage,
+              (savedEntry as any).created_at
+            )
+          )
+          .catch((err) => {
+            debugLog(`[session_save_ledger] Auto-linking failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+          });
+      });
+    }
+  }
+
   // ─── Fire-and-forget auto-compact ────────────────────────────
   // If the user has opted into auto-compact (via dashboard Settings → Boot),
   // run a health check after saving and compact if brain is degraded/unhealthy.
@@ -190,7 +218,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
         debugLog(`[auto-compact] Compaction complete for "${project}"`);
       }
     } catch (err) {
-      console.error(`[auto-compact] Non-fatal error for "${project}": ${err}`);
+      console.error(`[auto-compact] Non-fatal error for "${project}": ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       activeCompactions.delete(project);
     }
@@ -350,8 +378,9 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
       keywords: keywords,
     };
 
-    // Step 4: Run 3-way CRDT merge
-    const crdt = mergeHandoff(baseState, incomingState, currentState);
+    // Step 4: Run 3-way CRDT merge (sanitize first to block prototype pollution)
+    const sanitizedIncoming = sanitizeForMerge(incomingState) as typeof incomingState;
+    const crdt = mergeHandoff(baseState, sanitizedIncoming, currentState);
     mergeStrategy = crdt.strategy;
     isMerged = true;
 
@@ -425,7 +454,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
       version: newVersion,
     };
     storage.saveHistorySnapshot(snapshotEntry).catch(err =>
-      console.error(`[session_save_handoff] History snapshot failed (non-fatal): ${err}`)
+      console.error(`[session_save_handoff] History snapshot failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
     );
   }
 
@@ -434,7 +463,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
     try {
       notifyResourceUpdate(project, server);
     } catch (err) {
-      console.error(`[session_save_handoff] Resource notification failed (non-fatal): ${err}`);
+      console.error(`[session_save_handoff] Resource notification failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -444,7 +473,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
       .then(({ getSyncBus }) => getSyncBus())
       .then(bus => bus.broadcastUpdate(project, newVersion ?? 1))
       .catch(err =>
-        console.error(`[session_save_handoff] SyncBus broadcast failed (non-fatal): ${err}`)
+        console.error(`[session_save_handoff] SyncBus broadcast failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
       );
   }
 
@@ -475,10 +504,10 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
             debugLog(`[AutoCapture] HTML snapshot indexed in visual memory for "${project}"`);
           }
         } catch (err) {
-          console.error(`[AutoCapture] Metadata patch failed (non-fatal): ${err}`);
+          console.error(`[AutoCapture] Metadata patch failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-    }).catch(err => console.error(`[AutoCapture] Background task failed (non-fatal): ${err}`));
+    }).catch(err => console.error(`[AutoCapture] Background task failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`));
   }
 
   // ─── FACT MERGER: Async LLM contradiction resolution (v2.3.0) ───
@@ -714,13 +743,13 @@ export async function sessionLoadContextHandler(args: unknown) {
       const currentVersion = (data as any)?.version;
       if (currentVersion) {
         storage.saveHandoff(handoffUpdate, currentVersion).catch(err =>
-          console.error(`[Morning Briefing] Cache save failed (non-fatal): ${err}`)
+          console.error(`[Morning Briefing] Cache save failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
         );
       }
 
       debugLog(`[session_load_context] Morning Briefing generated for "${project}"`);
     } catch (err) {
-      console.error(`[session_load_context] Morning Briefing failed (non-fatal): ${err}`);
+      console.error(`[session_load_context] Morning Briefing failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     }
   } else if (meta?.morning_briefing) {
     // Show the cached briefing (generated within last 4 hours)
@@ -954,6 +983,72 @@ export async function knowledgeSearchHandler(args: unknown) {
       project: project || null,
     });
     contentBlocks.push(traceToContentBlock(trace));
+  }
+
+  // ── v6.0 Phase 3: 1-Hop Graph Expansion ──────────────────
+  // Same pattern as sessionSearchMemoryHandler:
+  // Traverse outbound links from direct hits to find associated memories.
+  // Graph-expanded results are BONUS — don't consume limit slots.
+  try {
+    // Extract IDs from the knowledge search results
+    const directIds = new Set<string>();
+    if (data.results && Array.isArray(data.results)) {
+      for (const entry of data.results) {
+        if ((entry as any)?.id) directIds.add((entry as any).id);
+      }
+    }
+
+    if (directIds.size > 0) {
+      const enrichedIds = new Set<string>();
+      const maxGraphResults = Math.min(limit, 10);
+
+      for (const directId of directIds) {
+        if (enrichedIds.size >= maxGraphResults) break;
+        const links = await storage.getLinksFrom(directId, PRISM_USER_ID, 0.3, 5);
+        for (const link of links) {
+          if (!directIds.has(link.target_id) && !enrichedIds.has(link.target_id)) {
+            enrichedIds.add(link.target_id);
+            if (enrichedIds.size >= maxGraphResults) break;
+          }
+        }
+      }
+
+      if (enrichedIds.size > 0) {
+        const enrichedEntries = await storage.getLedgerEntries({
+          user_id: `eq.${PRISM_USER_ID}`,
+          ids: [...enrichedIds],
+          select: "id,summary,project,created_at",
+        });
+
+        if (enrichedEntries.length > 0) {
+          const graphFormatted = enrichedEntries.map((e: any) =>
+            `[🔗] ${e.created_at?.split("T")[0] || "unknown"} — ${e.project || "unknown"}\n` +
+            `  Summary: ${e.summary}`
+          ).join("\n");
+
+          contentBlocks[0] = {
+            type: "text",
+            text: contentBlocks[0].text +
+              `\n\n🔗 Graph-connected memories (${enrichedEntries.length} via 1-hop expansion):\n\n${graphFormatted}`,
+          };
+
+          // Fire-and-forget: reinforce traversed links
+          for (const directId of directIds) {
+            storage.getLinksFrom(directId, PRISM_USER_ID, 0.3, 5)
+              .then(links => {
+                for (const link of links) {
+                  if (enrichedIds.has(link.target_id)) {
+                    storage.reinforceLink(directId, link.target_id, link.link_type).catch(() => {});
+                  }
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (graphErr) {
+    debugLog(`[knowledge_search] Graph expansion failed (non-fatal): ${graphErr instanceof Error ? graphErr.message : String(graphErr)}`);
   }
 
   return { content: contentBlocks, isError: false };
@@ -1298,6 +1393,67 @@ export async function sessionSearchMemoryHandler(args: unknown) {
       contentBlocks.push(traceToContentBlock(trace));
     }
 
+    // ── v6.0 Phase 3: 1-Hop Graph Expansion ──────────────────
+    // After direct hits, traverse outbound links from each result to
+    // find associated memories. Graph-expanded results are BONUS — they
+    // don't consume limit slots. Hard-capped at `limit` additional results
+    // to protect LLM context windows.
+    //
+    // Fire-and-forget: errors degrade gracefully to just direct hits.
+    try {
+      const directIds = new Set(results.map((r: any) => r.id).filter(Boolean));
+      const enrichedIds = new Set<string>();
+      const maxGraphResults = Math.min(limit, 10); // Hard cap
+
+      for (const directId of directIds) {
+        if (enrichedIds.size >= maxGraphResults) break;
+        const links = await storage.getLinksFrom(directId, PRISM_USER_ID, 0.3, 5);
+        for (const link of links) {
+          if (!directIds.has(link.target_id) && !enrichedIds.has(link.target_id)) {
+            enrichedIds.add(link.target_id);
+            if (enrichedIds.size >= maxGraphResults) break;
+          }
+        }
+      }
+
+      if (enrichedIds.size > 0) {
+        // Fetch the actual entries for enriched IDs
+        const enrichedEntries = await storage.getLedgerEntries({
+          user_id: `eq.${PRISM_USER_ID}`,
+          ids: [...enrichedIds],
+          select: "id,summary,project,created_at",
+        });
+
+        if (enrichedEntries.length > 0) {
+          const graphFormatted = enrichedEntries.map((e: any) =>
+            `[🔗] ${e.created_at?.split("T")[0] || "unknown"} — ${e.project || "unknown"}\n` +
+            `  Summary: ${e.summary}`
+          ).join("\n");
+
+          contentBlocks[0] = {
+            type: "text",
+            text: contentBlocks[0].text +
+              `\n\n🔗 Graph-connected memories (${enrichedEntries.length} via 1-hop expansion):\n\n${graphFormatted}`,
+          };
+
+          // Fire-and-forget: reinforce traversed links
+          for (const directId of directIds) {
+            storage.getLinksFrom(directId, PRISM_USER_ID, 0.3, 5)
+              .then(links => {
+                for (const link of links) {
+                  if (enrichedIds.has(link.target_id)) {
+                    storage.reinforceLink(directId, link.target_id, link.link_type).catch(() => {});
+                  }
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      }
+    } catch (graphErr) {
+      debugLog(`[session_search_memory] Graph expansion failed (non-fatal): ${graphErr instanceof Error ? graphErr.message : String(graphErr)}`);
+    }
+
     return { content: contentBlocks, isError: false };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -1454,6 +1610,49 @@ export async function backfillEmbeddingsHandler(args: unknown) {
   } as any;
 }
 
+// ─── v6.0 Phase 3: Backfill Links Handler ─────────────────────
+
+/**
+ * Retroactively create graph edges for all existing entries in a project.
+ * Runs 3 SQL strategies: temporal chaining, keyword overlap, provenance.
+ */
+export async function sessionBackfillLinksHandler(args: unknown) {
+  const { isBackfillLinksArgs } = await import("./sessionMemoryDefinitions.js");
+  if (!isBackfillLinksArgs(args)) {
+    throw new Error("Invalid arguments for session_backfill_links: 'project' is required.");
+  }
+
+  const { project } = args;
+  const storage = await getStorage();
+
+  debugLog(`[session_backfill_links] Starting backfill for project: ${project}`);
+  const startMs = Date.now();
+
+  const result = await storage.backfillLinks(project);
+  const durationMs = Date.now() - startMs;
+  const totalLinks = result.temporal + result.keyword + result.provenance;
+
+  debugLog(
+    `[session_backfill_links] Complete in ${durationMs}ms: ` +
+    `temporal=${result.temporal}, keyword=${result.keyword}, provenance=${result.provenance}`
+  );
+
+  return {
+    content: [{
+      type: "text",
+      text: `🔗 Graph backfill complete for "${project}" in ${durationMs}ms:\n\n` +
+        `• Temporal chains: ${result.temporal} links (conversation sequences)\n` +
+        `• Keyword overlap: ${result.keyword} links (≥3 shared keywords)\n` +
+        `• Provenance: ${result.provenance} links (rollup → archived originals)\n` +
+        `• **Total: ${totalLinks} new edges**\n\n` +
+        (totalLinks > 0
+          ? `✅ Your memory graph is now active! Search results will include graph-connected memories.`
+          : `ℹ️ No new links needed — the graph may already be up to date.`),
+    }],
+    isError: false,
+  };
+}
+
 // ─── Memory History Handler (v2.0 — Time Travel) ─────────────
 
 /**
@@ -1571,7 +1770,7 @@ export async function memoryCheckoutHandler(args: unknown) {
     version: result.version,
   };
   await storage.saveHistorySnapshot(revertSnapshotEntry).catch(err =>
-    console.error(`[memory_checkout] History snapshot of revert failed (non-fatal): ${err}`)
+    console.error(`[memory_checkout] History snapshot of revert failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
   );
 
   const newVersion = result.version;
@@ -2756,7 +2955,11 @@ export async function deepStoragePurgeHandler(args: unknown) {
         (args.project ? `Project: \`${args.project}\`\n` : `Scope: all projects\n`) +
         `Age threshold: entries older than ${olderThanDays} days\n\n` +
         `💡 Tier-2 (TurboQuant) and Tier-3 (FTS5) search remain fully functional.\n` +
-        `Tier-1 (native sqlite-vec) search will skip these entries — this is expected.`,
+        `Tier-1 (native sqlite-vec) search will skip these entries — this is expected.` +
+        (result.purged >= 1000
+          ? `\n\n💡 **Recommendation:** ${result.purged.toLocaleString()} entries were purged. ` +
+            `Run \`maintenance_vacuum\` to fully reclaim disk space from the database file.`
+          : ""),
     }],
     isError: false,
   };
@@ -2804,11 +3007,94 @@ export async function sessionIntuitiveRecallHandler(
       isError: false,
     };
   } catch (err) {
-    debugLog(`[session_intuitive_recall] Failed: ${err}`);
+    debugLog(`[session_intuitive_recall] Failed: ${err instanceof Error ? err.message : String(err)}`);
     return {
       content: [{ type: "text", text: `Error triggering Intuitive Recall: ${err instanceof Error ? err.message : String(err)}` }],
       isError: true,
     };
   }
 }
+
+// ─── v6.1: Storage Hygiene Handler ────────────────────────────────────────────
+//
+// Flow:
+//   1. getStorage() — resolves SQLite or Supabase backend
+//   2. storage.vacuumDatabase({ dryRun }) — backend-specific implementation:
+//      • SQLite: getDatabaseSize() → VACUUM → getDatabaseSize()
+//      • Supabase: instant no-op + guidance message
+//   3. Format response with before/after MB sizes
+
+export async function maintenanceVacuumHandler(args: unknown) {
+  const { isMaintenanceVacuumArgs } = await import("./sessionMemoryDefinitions.js");
+
+  if (!isMaintenanceVacuumArgs(args)) {
+    throw new Error("Invalid arguments for maintenance_vacuum");
+  }
+
+  const dryRun = args.dry_run ?? false;
+
+  debugLog(
+    `[maintenance_vacuum] ${dryRun ? "DRY RUN" : "EXECUTING"} VACUUM`
+  );
+
+  const storage = await getStorage();
+
+  // ── Progress notification ────────────────────────────────────────────────
+  // VACUUM blocks the MCP server for up to 60s on large databases.
+  // console.error writes to stderr — the MCP log channel visible in Claude
+  // Desktop's developer console and in the host's process log. This ensures
+  // the user sees feedback before the blocking call, not after.
+  // sendLoggingMessage is not wired to handlers, so stderr is the correct path.
+  if (!dryRun) {
+    console.error(
+      `[maintenance_vacuum] Starting VACUUM on SQLite database. ` +
+      `This may take up to 60 seconds on large databases. ` +
+      `The server will be unresponsive until complete.`
+    );
+  }
+
+  const result = await storage.vacuumDatabase({ dryRun });
+
+
+  const toMb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2);
+
+  // Supabase returns all-zero sizes — detect by checking sizeBefore
+  const isRemote = result.sizeBefore === 0 && result.sizeAfter === 0;
+
+  if (isRemote) {
+    return {
+      content: [{ type: "text", text: `ℹ️ **Maintenance Vacuum**\n\n${result.message}` }],
+      isError: false,
+    };
+  }
+
+  if (dryRun) {
+    return {
+      content: [{
+        type: "text",
+        text:
+          `🔍 **Maintenance Vacuum — DRY RUN**\n\n` +
+          `Current database size: **${toMb(result.sizeBefore)} MB**\n\n` +
+          `${result.message}\n\n` +
+          `To execute the vacuum, call again with \`dry_run: false\`.`,
+      }],
+      isError: false,
+    };
+  }
+
+  const savedMb = toMb(result.sizeBefore - result.sizeAfter);
+  return {
+    content: [{
+      type: "text",
+      text:
+        `✅ **Maintenance Vacuum Complete**\n\n` +
+        `Before: **${toMb(result.sizeBefore)} MB**\n` +
+        `After:  **${toMb(result.sizeAfter)} MB**\n` +
+        `Reclaimed: **${savedMb} MB**\n\n` +
+        result.message,
+    }],
+    isError: false,
+  };
+}
+
 

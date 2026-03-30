@@ -202,4 +202,10 @@ export const PRISM_SCHOLAR_TOPICS = (process.env.PRISM_SCHOLAR_TOPICS || "ai,age
   .split(",")
   .map(t => t.trim());
 
+// ─── v6.0: Associative Memory Graph ──────────────────────────
+// Controls the age threshold for link strength decay.
+// Links not traversed in the last N days lose 0.1 strength per sweep.
+export const PRISM_LINK_DECAY_DAYS = parseInt(
+  process.env.PRISM_LINK_DECAY_DAYS || "30", 10
+);
 

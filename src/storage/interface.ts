@@ -263,6 +263,7 @@ export interface HealthStats {
  * direct Supabase REST API calls.
  */
 export interface StorageBackend {
+  updateLastAccessed(ids: string[]): Promise<void>;
   // ─── Lifecycle ─────────────────────────────────────────────
 
   /** Initialize the storage backend (create tables, check connection, etc.) */
@@ -290,7 +291,7 @@ export interface StorageBackend {
    * Read ledger entries matching filter criteria.
    * Used by compaction to find candidates and by backfill to find missing embeddings.
    */
-  getLedgerEntries(params: Record<string, string>): Promise<unknown[]>;
+  getLedgerEntries(params: Record<string, any>): Promise<unknown[]>;
 
   /**
    * Delete ledger entries matching filter criteria.
@@ -671,12 +672,54 @@ export interface StorageBackend {
   decayLinks(olderThanDays: number): Promise<number>;
 
   /**
+   * Find existing ledger entries that share ≥ minSharedKeywords with the given keywords.
+   * Used by the auto-linker to create `related_to` edges on save.
+   *
+   * Implementation pushes the intersection logic to the DB layer using
+   * CTE-based json_each() explosion with hash joins — O(N) vs O(N²) cross-join.
+   *
+   * Results exclude the entry itself, archived entries, and deleted entries.
+   *
+   * @param excludeId       - Entry ID to exclude from results (self)
+   * @param project         - Project scope
+   * @param keywords        - Keywords from the new entry
+   * @param userId          - Tenant ID for isolation
+   * @param minSharedKeywords - Minimum shared keywords (default: 3)
+   * @param limit           - Maximum results to return (default: 10)
+   * @returns Array of matching entry IDs with their shared keyword counts
+   */
+  findKeywordOverlapEntries(
+    excludeId: string,
+    project: string,
+    keywords: string[],
+    userId: string,
+    minSharedKeywords?: number,
+    limit?: number,
+  ): Promise<Array<{ id: string; shared_count: number }>>;
+
+  /**
    * Retroactively create links for all existing entries in a project.
    * Three strategies: temporal chaining, keyword overlap, provenance.
    * Idempotent via INSERT OR IGNORE.
    * @returns Counts of links created per strategy
    */
   backfillLinks(project: string): Promise<{ temporal: number; keyword: number; provenance: number }>;
+
+  // ─── v6.1: Storage Hygiene ────────────────────────────────────
+
+  /**
+   * Run VACUUM on the underlying database to reclaim disk space after
+   * large purge operations. For SQLite, this rewrites the entire DB file.
+   * For remote backends (Supabase), returns a guidance message.
+   *
+   * @param opts.dryRun - If true, reports current size without running VACUUM.
+   * @returns sizeBefore, sizeAfter (bytes), and a human-readable message.
+   */
+  vacuumDatabase(opts: { dryRun: boolean }): Promise<{
+    sizeBefore: number;
+    sizeAfter: number;
+    message: string;
+  }>;
 }
 
 // ─── v6.0: Memory Link Type ───────────────────────────────────

@@ -155,7 +155,7 @@ export async function compactLedgerHandler(args: unknown) {
       user_id: `eq.${PRISM_USER_ID}`,
       "archived_at": "is.null",
       "is_rollup": "eq.false",
-      order: "created_at.asc",
+      order: "last_accessed_at.asc.nullsfirst,created_at.asc",
       limit: String(toCompact),
       select: "id,summary,decisions,files_changed,keywords,session_date",
     });
@@ -200,7 +200,7 @@ export async function compactLedgerHandler(args: unknown) {
     )];
 
     // Step 4: Insert rollup entry via storage backend
-    await storage.saveLedger({
+    const savedRollup: any = await storage.saveLedger({
       project: proj,
       user_id: PRISM_USER_ID,
       summary: `[ROLLUP of ${oldEntries.length} sessions] ${finalSummary}`,
@@ -211,6 +211,25 @@ export async function compactLedgerHandler(args: unknown) {
       rollup_count: oldEntries.length,
       conversation_id: `rollup-${Date.now()}`,
     });
+
+    const rollupId = savedRollup && savedRollup[0] ? savedRollup[0].id : null;
+
+    if (rollupId) {
+      // ── v6.0 Phase 3: Auto-Linking on Save (Compaction) ──────────
+      await Promise.all(oldEntries.map(async (entry: any) => {
+        try {
+          await storage.createLink({
+            source_id: rollupId,
+            target_id: entry.id,
+            link_type: "spawned_from",
+            strength: 1.0,
+            metadata: JSON.stringify({ reason: "compaction", original_date: entry.session_date })
+          });
+        } catch (err) {
+          debugLog(`[compact_ledger] Failed to create spawned_from link for ${rollupId}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }));
+    }
 
     // Step 5: Archive old entries (soft-delete)
     for (const entry of oldEntries) {

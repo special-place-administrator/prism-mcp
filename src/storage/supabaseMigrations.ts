@@ -212,7 +212,77 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE session_ledger ADD COLUMN IF NOT EXISTS last_accessed_at TIMESTAMPTZ DEFAULT NULL;
     `,
   },
-  // Future migrations go here (version 32+)
+  {
+    // ─── v6.2: Distributed Scheduler Lock ─────────────────────────
+    //
+    // REVIEWER NOTE: This table enables Hivemind multi-node safety.
+    //
+    // Problem: In a distributed deployment (multiple Prism instances
+    // sharing a single Supabase backend), each node has its own local
+    // config file. This means each node independently acquires its local
+    // "scheduler_lock" and triggers maintenance sweeps concurrently.
+    // While the sweeps are idempotent, redundant compaction/LLM calls
+    // waste compute and can cause Supabase rate-limit pressure.
+    //
+    // Solution: A shared `scheduler_locks` table in Supabase acts as a
+    // distributed mutex. The `expires_at` column provides automatic
+    // zombie-lock recovery: if a node crashes without releasing the lock,
+    // the next node can acquire it after 1 minute.
+    //
+    // The `prism_acquire_lock` RPC handles the atomic ON CONFLICT 
+    // DO UPDATE WHERE pattern that PostgREST cannot express natively.
+    //
+    // Heartbeat: UPDATE expires_at = NOW() + '1 minute' every 30s.
+    // Release: DELETE WHERE key = 'scheduler_main' AND pid = <this_pid>.
+    version: 32,
+    name: "distributed_scheduler_lock",
+    sql: `
+      CREATE TABLE IF NOT EXISTS scheduler_locks (
+        key        TEXT        PRIMARY KEY,
+        pid        TEXT        NOT NULL,
+        acquired_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+
+      -- Only service_role can write to this table
+      ALTER TABLE scheduler_locks ENABLE ROW LEVEL SECURITY;
+
+      -- Allow all authenticated reads (for observability)
+      CREATE POLICY IF NOT EXISTS "scheduler_locks_select"
+        ON scheduler_locks FOR SELECT
+        USING (true);
+
+      -- Atomic lock acquisition RPC
+      CREATE OR REPLACE FUNCTION prism_acquire_lock(p_key TEXT, p_pid TEXT, p_ttl_ms INTEGER)
+      RETURNS BOOLEAN
+      LANGUAGE plpgsql
+      SECURITY DEFINER
+      AS $$
+      DECLARE
+          v_expires_at TIMESTAMPTZ := now() + (p_ttl_ms || ' milliseconds')::interval;
+          v_success BOOLEAN;
+      BEGIN
+          INSERT INTO scheduler_locks (key, pid, acquired_at, expires_at)
+          VALUES (p_key, p_pid, now(), v_expires_at)
+          ON CONFLICT (key) DO UPDATE
+          SET pid = EXCLUDED.pid,
+              acquired_at = EXCLUDED.acquired_at,
+              expires_at = EXCLUDED.expires_at
+          WHERE scheduler_locks.expires_at < now(); -- Only steal if expired!
+
+          -- Check if WE are the ones who hold it now
+          SELECT EXISTS (
+              SELECT 1 FROM scheduler_locks 
+              WHERE key = p_key AND pid = p_pid AND expires_at = v_expires_at
+          ) INTO v_success;
+
+          RETURN v_success;
+      END;
+      $$;
+    `,
+  },
+  // Future migrations go here (version 33+)
+
 ];
 
 /**

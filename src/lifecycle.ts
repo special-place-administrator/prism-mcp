@@ -141,7 +141,7 @@ export function acquireLock() {
         }
       }
     } catch (err) {
-      log(`Warning: Failed to process existing PID file: ${err}`);
+      log(`Warning: Failed to process existing PID file: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -150,7 +150,7 @@ export function acquireLock() {
     fs.writeFileSync(PID_FILE, process.pid.toString(), "utf8");
     log(`Acquired singleton lock (PID ${process.pid})`);
   } catch (err) {
-    log(`Warning: Failed to write PID file: ${err}`);
+    log(`Warning: Failed to write PID file: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -191,12 +191,12 @@ export function registerShutdownHandlers() {
               const state = sdm.exportState();
               await storage.saveSdmState(project, state);
             } catch (err) {
-              log(`Failed to flush SDM state for "${project}": ${err}`);
+              log(`Failed to flush SDM state for "${project}": ${err instanceof Error ? err.message : String(err)}`);
             }
           }
         }
       } catch (err) {
-        log(`Failed to load SDM engine during shutdown: ${err}`);
+        log(`Failed to load SDM engine during shutdown: ${err instanceof Error ? err.message : String(err)}`);
       }
 
       // 2. Close system settings DB
@@ -219,7 +219,7 @@ export function registerShutdownHandlers() {
         }
       }
     } catch (err) {
-      log(`Error during shutdown cleanup: ${err}`);
+      log(`Error during shutdown cleanup: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       process.exit(0);
     }
