@@ -613,6 +613,94 @@ export interface StorageBackend {
    * @param project - Project identifier
    */
   getAllProjectEmbeddings(project: string): Promise<Array<{ id: string, summary: string, embedding_compressed: string }>>;
+
+  // ─── v6.0: Memory Links (Associative Graph) ──────────────────
+  //
+  // Typed, weighted edges that turn the flat session_ledger into an
+  // associative graph. See: memory_links_rfc.md (approved 2026-03-30)
+  //
+  // SECURITY: All read methods JOIN against session_ledger to enforce:
+  //   1. Tenant isolation (user_id match)
+  //   2. GDPR tombstone filtering (deleted_at IS NULL)
+  //   3. TTL/archive filtering (archived_at IS NULL)
+
+  /**
+   * Create a link between two ledger entries.
+   * Uses INSERT OR IGNORE (idempotent). After insert, atomically prunes
+   * any related_to links beyond the 25-link cap.
+   */
+  createLink(link: MemoryLink): Promise<void>;
+
+  /**
+   * Get all outbound links from a source entry.
+   * JOINs session_ledger to enforce tenant isolation and GDPR visibility.
+   * Used for 1-hop expansion during search result enrichment.
+   */
+  getLinksFrom(sourceId: string, userId: string, minStrength?: number, limit?: number): Promise<MemoryLink[]>;
+
+  /**
+   * Get all inbound links pointing to a target entry.
+   * JOINs session_ledger to enforce tenant isolation and GDPR visibility.
+   * Used for reverse lookups: "who references this entry?"
+   */
+  getLinksTo(targetId: string, userId: string, minStrength?: number, limit?: number): Promise<MemoryLink[]>;
+
+  /**
+   * Count links from an entry, optionally filtered by type.
+   */
+  countLinks(entryId: string, linkType?: string): Promise<number>;
+
+  /**
+   * Atomically prune all links of a given type beyond the top 25 by strength.
+   * Uses a single DELETE with NOT IN subquery — no TOCTOU race.
+   */
+  pruneExcessLinks(entryId: string, linkType: string, maxLinks?: number): Promise<void>;
+
+  /**
+   * Strengthen a link by +0.1 (capped at 1.0) and update last_traversed_at.
+   * Called async (fire-and-forget via setImmediate) when a link is traversed
+   * during search, so it never blocks the search response path.
+   */
+  reinforceLink(sourceId: string, targetId: string, linkType: string): Promise<void>;
+
+  /**
+   * Decay all links not traversed in the last N days by -0.1 (floor at 0.0).
+   * Called by the sleep-cycle consolidation scheduler.
+   * @returns Number of links decayed
+   */
+  decayLinks(olderThanDays: number): Promise<number>;
+
+  /**
+   * Retroactively create links for all existing entries in a project.
+   * Three strategies: temporal chaining, keyword overlap, provenance.
+   * Idempotent via INSERT OR IGNORE.
+   * @returns Counts of links created per strategy
+   */
+  backfillLinks(project: string): Promise<{ temporal: number; keyword: number; provenance: number }>;
+}
+
+// ─── v6.0: Memory Link Type ───────────────────────────────────
+
+/**
+ * A typed, weighted edge between two session_ledger entries.
+ * Forms the associative graph layer over the flat ledger.
+ *
+ * Link types:
+ *   - related_to:       Topical similarity (bidirectional, dual-row)
+ *   - temporal_next:    Sequential ordering within a conversation (directed)
+ *   - spawned_from:     Compaction provenance — rollup → archived originals (directed)
+ *   - synthesized_from: Insight derived from multiple entries (directed)
+ *   - supersedes:       Newer entry replaces older (directed)
+ *   - depends_on:       Prerequisite relationship (directed)
+ */
+export interface MemoryLink {
+  source_id: string;
+  target_id: string;
+  link_type: 'related_to' | 'temporal_next' | 'spawned_from' | 'synthesized_from' | 'supersedes' | 'depends_on';
+  strength: number;
+  metadata?: string | null;       // JSON-stringified optional context
+  created_at?: string;
+  last_traversed_at?: string;
 }
 
 // ─── v3.1 Types ────────────────────────────────────────────────

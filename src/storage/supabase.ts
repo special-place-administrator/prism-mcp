@@ -33,6 +33,7 @@ import {
   HealthStats,             // v2.2.0: Health check (fsck) aggregate type
   AgentRegistryEntry,      // v3.0: Agent Hivemind registry
   AnalyticsData,           // v3.1: Memory Analytics
+  MemoryLink,              // v6.0: Associative Memory Graph
 } from "./interface.js";
 
 import { debugLog } from "../utils/logger.js";
@@ -803,5 +804,42 @@ export class SupabaseStorage implements StorageBackend {
     throw new Error("getting compressed embeddings for Hamming scan is not implemented for Supabase backend yet.");
   }
 
+  // ─── v6.0: Memory Links (Associative Graph) — Supabase graceful degradation ──
+  //
+  // These methods return safe no-op values until the Supabase migration +
+  // RPC layer is built. This ensures Supabase users don't crash when
+  // Phase 3 auto-linking fires. SQLite is the primary target for v6.0.
+
+  async createLink(_link: MemoryLink): Promise<void> {
+    return; // Graceful no-op
+  }
+
+  async getLinksFrom(_sourceId: string, _userId: string, _minStrength?: number, _limit?: number): Promise<MemoryLink[]> {
+    return []; // Return empty graph safely
+  }
+
+  async getLinksTo(_targetId: string, _userId: string, _minStrength?: number, _limit?: number): Promise<MemoryLink[]> {
+    return []; // Return empty graph safely
+  }
+
+  async countLinks(_entryId: string, _linkType?: string): Promise<number> {
+    return 0; // No links in Supabase yet
+  }
+
+  async pruneExcessLinks(_entryId: string, _linkType: string, _maxLinks?: number): Promise<void> {
+    return; // Graceful no-op
+  }
+
+  async reinforceLink(_sourceId: string, _targetId: string, _linkType: string): Promise<void> {
+    return; // Graceful no-op
+  }
+
+  async decayLinks(_olderThanDays: number): Promise<number> {
+    return 0; // No links to decay
+  }
+
+  async backfillLinks(_project: string): Promise<{ temporal: number; keyword: number; provenance: number }> {
+    return { temporal: 0, keyword: 0, provenance: 0 }; // No-op
+  }
 }
 
