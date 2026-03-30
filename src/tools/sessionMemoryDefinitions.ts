@@ -419,7 +419,15 @@ export function isKnowledgeForgetArgs(
   confirm_all?: boolean;
   dry_run?: boolean;
 } {
-  return typeof args === "object" && args !== null;
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (a.project !== undefined && typeof a.project !== "string") return false;
+  if (a.category !== undefined && typeof a.category !== "string") return false;
+  if (a.older_than_days !== undefined && typeof a.older_than_days !== "number") return false;
+  if (a.clear_handoff !== undefined && typeof a.clear_handoff !== "boolean") return false;
+  if (a.confirm_all !== undefined && typeof a.confirm_all !== "boolean") return false;
+  if (a.dry_run !== undefined && typeof a.dry_run !== "boolean") return false;
+  return true;
 }
 
 // Phase 1: Added enable_trace to the type guard.
@@ -434,7 +442,14 @@ export function isKnowledgeSearchArgs(
   limit?: number;
   enable_trace?: boolean;  // Phase 1: Explainability flag
 } {
-  return typeof args === "object" && args !== null;
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (a.project !== undefined && typeof a.project !== "string") return false;
+  if (a.query !== undefined && typeof a.query !== "string") return false;
+  if (a.category !== undefined && typeof a.category !== "string") return false;
+  if (a.limit !== undefined && typeof a.limit !== "number") return false;
+  if (a.enable_trace !== undefined && typeof a.enable_trace !== "boolean") return false;
+  return true;
 }
 
 export function isSessionSaveLedgerArgs(
@@ -475,12 +490,17 @@ export function isSessionSaveHandoffArgs(
   role?: string;  // v3.0: Hivemind
   disable_merge?: boolean;  // v5.4: CRDT bypass
 } {
-  return (
-    typeof args === "object" &&
-    args !== null &&
-    "project" in args &&
-    typeof (args as { project: string }).project === "string"
-  );
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (typeof a.project !== "string") return false;
+  if (a.expected_version !== undefined && typeof a.expected_version !== "number") return false;
+  if (a.open_todos !== undefined && !Array.isArray(a.open_todos)) return false;
+  if (a.active_branch !== undefined && typeof a.active_branch !== "string") return false;
+  if (a.last_summary !== undefined && typeof a.last_summary !== "string") return false;
+  if (a.key_context !== undefined && typeof a.key_context !== "string") return false;
+  if (a.role !== undefined && typeof a.role !== "string") return false;
+  if (a.disable_merge !== undefined && typeof a.disable_merge !== "boolean") return false;
+  return true;
 }
 
 // ─── v0.4.0: Type guard for semantic search ──────────────────
@@ -497,12 +517,15 @@ export function isSessionSearchMemoryArgs(
   enable_trace?: boolean;  // Phase 1: Explainability flag
   context_boost?: boolean; // v5.2: Context-Weighted Retrieval
 } {
-  return (
-    typeof args === "object" &&
-    args !== null &&
-    "query" in args &&
-    typeof (args as { query: string }).query === "string"
-  );
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (typeof a.query !== "string") return false;
+  if (a.project !== undefined && typeof a.project !== "string") return false;
+  if (a.limit !== undefined && typeof a.limit !== "number") return false;
+  if (a.similarity_threshold !== undefined && typeof a.similarity_threshold !== "number") return false;
+  if (a.enable_trace !== undefined && typeof a.enable_trace !== "boolean") return false;
+  if (a.context_boost !== undefined && typeof a.context_boost !== "boolean") return false;
+  return true;
 }
 
 // ─── v1.5.0: Type guard for backfill embeddings ──────────────
@@ -513,7 +536,12 @@ export function isBackfillEmbeddingsArgs(
   limit?: number;
   dry_run?: boolean;
 } {
-  return typeof args === "object" && args !== null;
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (a.project !== undefined && typeof a.project !== "string") return false;
+  if (a.limit !== undefined && typeof a.limit !== "number") return false;
+  if (a.dry_run !== undefined && typeof a.dry_run !== "boolean") return false;
+  return true;
 }
 
 export function isBackfillLinksArgs(
@@ -529,13 +557,14 @@ export function isBackfillLinksArgs(
 
 export function isSessionLoadContextArgs(
   args: unknown
-): args is { project: string; level?: "quick" | "standard" | "deep"; role?: string } {
-  return (
-    typeof args === "object" &&
-    args !== null &&
-    "project" in args &&
-    typeof (args as { project: string }).project === "string"
-  );
+): args is { project: string; level?: "quick" | "standard" | "deep"; role?: string; max_tokens?: number } {
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (typeof a.project !== "string") return false;
+  if (a.level !== undefined && a.level !== "quick" && a.level !== "standard" && a.level !== "deep") return false;
+  if (a.role !== undefined && typeof a.role !== "string") return false;
+  if (a.max_tokens !== undefined && typeof a.max_tokens !== "number") return false;
+  return true;
 }
 
 // ─── v2.0: Time Travel Tool Definitions ──────────────────────
@@ -730,7 +759,10 @@ export const SESSION_HEALTH_CHECK_TOOL: Tool = {
 export function isSessionHealthCheckArgs(
   args: unknown
 ): args is { auto_fix?: boolean } {
-  return typeof args === "object" && args !== null;  // any object is valid
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (a.auto_fix !== undefined && typeof a.auto_fix !== "boolean") return false;
+  return true;
 }
 
 // ─── Phase 2: GDPR-Compliant Memory Deletion Tool ────────────
@@ -797,12 +829,12 @@ export const SESSION_FORGET_MEMORY_TOOL: Tool = {
 export function isSessionForgetMemoryArgs(
   args: unknown
 ): args is { memory_id: string; hard_delete?: boolean; reason?: string } {
-  return (
-    typeof args === "object" &&
-    args !== null &&
-    "memory_id" in args &&
-    typeof (args as { memory_id: string }).memory_id === "string"
-  );
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (typeof a.memory_id !== "string") return false;
+  if (a.hard_delete !== undefined && typeof a.hard_delete !== "boolean") return false;
+  if (a.reason !== undefined && typeof a.reason !== "string") return false;
+  return true;
 }
 
 // ─── Phase 2: GDPR Export Tool ─────────────────────────────────────────
@@ -980,20 +1012,17 @@ export function isSessionSaveExperienceArgs(
   confidence_score?: number;
   role?: string;
 } {
-  return (
-    typeof args === "object" &&
-    args !== null &&
-    "project" in args &&
-    typeof (args as any).project === "string" &&
-    "event_type" in args &&
-    typeof (args as any).event_type === "string" &&
-    "context" in args &&
-    typeof (args as any).context === "string" &&
-    "action" in args &&
-    typeof (args as any).action === "string" &&
-    "outcome" in args &&
-    typeof (args as any).outcome === "string"
-  );
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (typeof a.project !== "string") return false;
+  if (typeof a.event_type !== "string") return false;
+  if (typeof a.context !== "string") return false;
+  if (typeof a.action !== "string") return false;
+  if (typeof a.outcome !== "string") return false;
+  if (a.correction !== undefined && typeof a.correction !== "string") return false;
+  if (a.confidence_score !== undefined && typeof a.confidence_score !== "number") return false;
+  if (a.role !== undefined && typeof a.role !== "string") return false;
+  return true;
 }
 
 export const KNOWLEDGE_UPVOTE_TOOL: Tool = {
@@ -1083,12 +1112,12 @@ export const KNOWLEDGE_SYNC_RULES_TOOL: Tool = {
 export function isKnowledgeSyncRulesArgs(
   args: unknown
 ): args is { project: string; target_file?: string; dry_run?: boolean } {
-  return (
-    typeof args === "object" &&
-    args !== null &&
-    "project" in args &&
-    typeof (args as { project: string }).project === "string"
-  );
+  if (typeof args !== "object" || args === null) return false;
+  const a = args as Record<string, unknown>;
+  if (typeof a.project !== "string") return false;
+  if (a.target_file !== undefined && typeof a.target_file !== "string") return false;
+  if (a.dry_run !== undefined && typeof a.dry_run !== "boolean") return false;
+  return true;
 }
 
 // ─── v5.1: Deep Storage Mode (The Purge) ──────────────────────
@@ -1169,6 +1198,7 @@ export function isDeepStoragePurgeArgs(
   const a = args as Record<string, unknown>;
   if (a.project !== undefined && typeof a.project !== "string") return false;
   if (a.older_than_days !== undefined && typeof a.older_than_days !== "number") return false;
+  if (a.dry_run !== undefined && typeof a.dry_run !== "boolean") return false;
   return true;
 }
 
