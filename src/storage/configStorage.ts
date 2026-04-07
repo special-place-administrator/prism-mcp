@@ -71,6 +71,30 @@ export async function initConfigStorage() {
     settingsCache = {};
   }
 
+  // ── Env-var override layer ──────────────────────────────────────────
+  // MCP harness configs inject settings via process.env (the "env" block
+  // in mcpServers entries). Overlay these onto the cache so they take
+  // precedence over SQLite values. This is how the Bonsai launcher's
+  // "Deploy Prism" flow configures the llamacpp provider without needing
+  // to pre-populate the SQLite config DB.
+  const ENV_TO_SETTING: Record<string, string> = {
+    TEXT_PROVIDER:            "text_provider",
+    EMBEDDING_PROVIDER:       "embedding_provider",
+    LLAMACPP_TEXT_URL:        "llamacpp_text_url",
+    LLAMACPP_TEXT_MODEL:      "llamacpp_text_model",
+    LLAMACPP_EMBEDDING_URL:   "llamacpp_embedding_url",
+    LLAMACPP_EMBEDDING_MODEL: "llamacpp_embedding_model",
+    PRISM_DASHBOARD_PORT:     "dashboard_port",
+  };
+  if (settingsCache) {
+    for (const [envKey, settingKey] of Object.entries(ENV_TO_SETTING)) {
+      const val = process.env[envKey];
+      if (val !== undefined && val !== "") {
+        settingsCache[settingKey] = val;
+      }
+    }
+  }
+
   initialized = true;
 }
 

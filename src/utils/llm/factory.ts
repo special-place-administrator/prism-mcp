@@ -1,5 +1,5 @@
 /**
- * LLM Provider Factory (v4.6 — Ollama Local Embedding Support)
+ * LLM Provider Factory (v4.7 — Llama.cpp + Ollama Local Support)
  * ─────────────────────────────────────────────────────────────────────────────
  * PURPOSE:
  *   Single point of resolution for the active LLMProvider.
@@ -10,8 +10,8 @@
  * SPLIT PROVIDER ARCHITECTURE:
  *   Two independent settings control text and embedding routing:
  *
- *   text_provider      — "gemini" (default) | "openai" | "anthropic"
- *   embedding_provider — "auto" (default)   | "gemini" | "openai" | "voyage" | "ollama"
+ *   text_provider      — "gemini" (default) | "openai" | "anthropic" | "llamacpp"
+ *   embedding_provider — "auto" (default)   | "gemini" | "openai" | "voyage" | "ollama" | "llamacpp"
  *
  *   When embedding_provider = "auto":
  *     * If text_provider is gemini or openai → use same provider for embeddings
@@ -26,6 +26,7 @@
  *   text_provider=anthropic, embedding_provider=voyage → Claude+Voyage (Anthropic-recommended)
  *   text_provider=anthropic, embedding_provider=openai → Claude+OpenAI cloud embeddings
  *   text_provider=anthropic, embedding_provider=ollama → Claude+Ollama (fully local, zero-cost)
+ *   text_provider=llamacpp,  embedding_provider=auto   → Llama.cpp+Llama.cpp (fully local, Bonsai stack)
  *   text_provider=gemini,    embedding_provider=voyage → Gemini+Voyage (mixed)
  *   text_provider=gemini,    embedding_provider=ollama → Gemini+Ollama (hybrid cloud/local)
  *
@@ -49,6 +50,7 @@ import { OpenAIAdapter } from "./adapters/openai.js";
 import { AnthropicAdapter } from "./adapters/anthropic.js";
 import { VoyageAdapter } from "./adapters/voyage.js";
 import { OllamaAdapter } from "./adapters/ollama.js";
+import { LlamaCppAdapter } from "./adapters/llamacpp.js";
 import { TracingLLMProvider } from "./adapters/traced.js";
 
 // Module-level singleton — one composed provider per MCP server process.
@@ -62,6 +64,7 @@ function buildTextAdapter(type: string): LLMProvider {
   switch (type) {
     case "anthropic": return new AnthropicAdapter();
     case "openai":    return new OpenAIAdapter();
+    case "llamacpp":  return new LlamaCppAdapter();
     case "gemini":
     default:          return new GeminiAdapter();
   }
@@ -75,8 +78,9 @@ function buildEmbeddingAdapter(type: string): LLMProvider {
   // "ollama" is the fully local zero-cost alternative.
   switch (type) {
     case "openai": return new OpenAIAdapter();
-    case "voyage": return new VoyageAdapter();
-    case "ollama": return new OllamaAdapter();
+    case "voyage":    return new VoyageAdapter();
+    case "ollama":    return new OllamaAdapter();
+    case "llamacpp":  return new LlamaCppAdapter();
     case "gemini":
     default:       return new GeminiAdapter();
   }

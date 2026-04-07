@@ -1221,6 +1221,7 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
               <option value="gemini">🔵 Gemini (Google)</option>
               <option value="openai">🟢 OpenAI / Ollama</option>
               <option value="anthropic">🟣 Anthropic (Claude)</option>
+              <option value="llamacpp">🦙 Llama.cpp (Bonsai)</option>
             </select>
           </div>
 
@@ -1302,6 +1303,32 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
             </div>
           </div>
 
+          <!-- Llama.cpp / Bonsai text fields -->
+          <div id="provider-fields-llamacpp" style="display:none">
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Text Model URL</div>
+                <div class="setting-desc">Bonsai llama-server text endpoint (default: http://127.0.0.1:8080/v1)</div>
+              </div>
+              <input type="text" id="input-llamacpp-text-url"
+                placeholder="http://127.0.0.1:8080/v1"
+                style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 220px;"
+                onchange="saveBootSetting('llamacpp_text_url', this.value)"
+                oninput="clearTimeout(this._ptu); var self=this; this._ptu=setTimeout(function(){saveBootSetting('llamacpp_text_url',self.value)},800)" />
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Text Model Name</div>
+                <div class="setting-desc">Alias passed to llama-server (default: Bonsai-8B)</div>
+              </div>
+              <input type="text" id="input-llamacpp-text-model"
+                placeholder="Bonsai-8B"
+                style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 180px;"
+                onchange="saveBootSetting('llamacpp_text_model', this.value)"
+                oninput="clearTimeout(this._ptm); var self=this; this._ptm=setTimeout(function(){saveBootSetting('llamacpp_text_model',self.value)},800)" />
+            </div>
+          </div>
+
           <!-- ── Embedding Provider (always visible) ─────────── -->
           <div class="setting-section" style="margin-top:1.2rem">Embedding Provider <span class="boot-badge">Restart Required</span></div>
 
@@ -1318,6 +1345,7 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
               <option value="openai">🟢 OpenAI</option>
               <option value="voyage">🔮 Voyage AI</option>
               <option value="ollama">🟠 Ollama (Local)</option>
+              <option value="llamacpp">🦙 Llama.cpp (Bonsai)</option>
             </select>
           </div>
 
@@ -1395,9 +1423,35 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
             </div>
           </div>
 
+          <!-- Llama.cpp / Bonsai embedding fields (shown when embedding_provider = llamacpp) -->
+          <div id="embed-fields-llamacpp" style="display:none">
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Embedding Model URL</div>
+                <div class="setting-desc">Bonsai llama-server embedding endpoint (default: http://127.0.0.1:8081/v1)</div>
+              </div>
+              <input type="text" id="input-llamacpp-embedding-url"
+                placeholder="http://127.0.0.1:8081/v1"
+                style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 220px;"
+                onchange="saveBootSetting('llamacpp_embedding_url', this.value)"
+                oninput="clearTimeout(this._peu); var self=this; this._peu=setTimeout(function(){saveBootSetting('llamacpp_embedding_url',self.value)},800)" />
+            </div>
+            <div class="setting-row">
+              <div>
+                <div class="setting-label">Embedding Model Name</div>
+                <div class="setting-desc">Must output 768 dims. nomic-embed-text-v2-moe recommended.</div>
+              </div>
+              <input type="text" id="input-llamacpp-embedding-model"
+                placeholder="nomic-embed-text-v2-moe"
+                style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 210px;"
+                onchange="saveBootSetting('llamacpp_embedding_model', this.value)"
+                oninput="clearTimeout(this._pem); var self=this; this._pem=setTimeout(function(){saveBootSetting('llamacpp_embedding_model',self.value)},800)" />
+            </div>
+          </div>
+
           <div style="margin-top:1rem;padding:0.6rem 0.8rem;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:6px;font-size:0.78rem;color:var(--text-secondary);line-height:1.5">
-            💡 <strong>Zero-cost setup:</strong> Text Provider → <code>Anthropic</code>, Embedding Provider → <code>Ollama (Local)</code>.<br>
-            Use Claude for reasoning &amp; <code>nomic-embed-text</code> (free, local, 768-dim native) for embeddings.
+            💡 <strong>Fully local setup:</strong> Text Provider → <code>Llama.cpp (Bonsai)</code>, Embedding Provider → <code>Llama.cpp (Bonsai)</code>.<br>
+            Zero API keys, zero cost. Runs on your GPU via Bonsai launcher with <code>nomic-embed-text-v2-moe</code> (768-dim native).
           </div>
 
           <span class="setting-saved" id="savedToastProviders">Saved ✓</span>
@@ -3245,6 +3299,7 @@ function onTextProviderChange(value) {
     document.getElementById('provider-fields-gemini').style.display = value === 'gemini' ? '' : 'none';
     document.getElementById('provider-fields-openai').style.display = value === 'openai' ? '' : 'none';
     document.getElementById('provider-fields-anthropic').style.display = value === 'anthropic' ? '' : 'none';
+    document.getElementById('provider-fields-llamacpp').style.display = value === 'llamacpp' ? '' : 'none';
     // Refresh the Anthropic warning — its visibility depends on both dropdowns
     refreshAnthropicWarning(value, document.getElementById('select-embedding-provider').value);
     saveBootSetting('text_provider', value);
@@ -3256,6 +3311,7 @@ function onEmbeddingProviderChange(value) {
     document.getElementById('embed-fields-openai').style.display = value === 'openai' ? '' : 'none';
     document.getElementById('embed-fields-voyage').style.display = value === 'voyage' ? '' : 'none';
     document.getElementById('embed-fields-ollama').style.display = value === 'ollama' ? '' : 'none';
+    document.getElementById('embed-fields-llamacpp').style.display = value === 'llamacpp' ? '' : 'none';
     refreshAnthropicWarning(textVal, value);
     saveBootSetting('embedding_provider', value);
 }
@@ -3444,6 +3500,15 @@ function loadAiProviderSettings() {
                     if (olUrl && s.ollama_base_url) olUrl.value = s.ollama_base_url;
                     var olMod = document.getElementById('input-ollama-model');
                     if (olMod && s.ollama_model) olMod.value = s.ollama_model;
+                    // Llama.cpp / Bonsai fields
+                    var lcTu = document.getElementById('input-llamacpp-text-url');
+                    if (lcTu && s.llamacpp_text_url) lcTu.value = s.llamacpp_text_url;
+                    var lcTm = document.getElementById('input-llamacpp-text-model');
+                    if (lcTm && s.llamacpp_text_model) lcTm.value = s.llamacpp_text_model;
+                    var lcEu = document.getElementById('input-llamacpp-embedding-url');
+                    if (lcEu && s.llamacpp_embedding_url) lcEu.value = s.llamacpp_embedding_url;
+                    var lcEm = document.getElementById('input-llamacpp-embedding-model');
+                    if (lcEm && s.llamacpp_embedding_model) lcEm.value = s.llamacpp_embedding_model;
                     gKey = document.getElementById('input-google-api-key');
                     if (gKey)
                         gKey.placeholder = s.GOOGLE_API_KEY ? '(key saved — paste to update)' : 'AIza…';
