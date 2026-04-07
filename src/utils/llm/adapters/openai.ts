@@ -71,7 +71,7 @@ export class OpenAIAdapter implements LLMProvider {
   constructor() {
     // Priority: dashboard setting → environment variable → empty string.
     // This lets users configure keys via the dashboard without touching .env.
-    const apiKey  = getSettingSync("openai_api_key",  process.env.OPENAI_API_KEY ?? "");
+    const apiKey  = getSettingSync("openai_api_key", "");
     const baseURL = getSettingSync("openai_base_url", "https://api.openai.com/v1");
 
     // Detect local inference endpoints — these don't need a real API key.

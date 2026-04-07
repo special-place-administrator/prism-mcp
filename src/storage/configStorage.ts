@@ -43,6 +43,78 @@ function getClient() {
   return configClient;
 }
 
+// ── Env → setting key mapping ─────────────────────────────────────
+// Used during first-run bootstrap: if a setting has no value in the DB
+// and the corresponding env var is set, we write it INTO the DB so the
+// dashboard becomes the single source of truth from that point forward.
+const ENV_TO_SETTING: Record<string, string> = {
+  // Provider selection
+  TEXT_PROVIDER:              "text_provider",
+  EMBEDDING_PROVIDER:         "embedding_provider",
+
+  // Llama.cpp
+  LLAMACPP_TEXT_URL:          "llamacpp_text_url",
+  LLAMACPP_TEXT_MODEL:        "llamacpp_text_model",
+  LLAMACPP_EMBEDDING_URL:     "llamacpp_embedding_url",
+  LLAMACPP_EMBEDDING_MODEL:   "llamacpp_embedding_model",
+
+  // OpenAI / Ollama
+  OPENAI_API_KEY:             "openai_api_key",
+  OPENAI_BASE_URL:            "openai_base_url",
+  OPENAI_MODEL:               "openai_model",
+  OPENAI_EMBEDDING_MODEL:     "openai_embedding_model",
+
+  // Google / Gemini
+  GOOGLE_API_KEY:             "google_api_key",
+
+  // Anthropic
+  ANTHROPIC_API_KEY:          "anthropic_api_key",
+  ANTHROPIC_MODEL:            "anthropic_model",
+
+  // Voyage
+  VOYAGE_API_KEY:             "voyage_api_key",
+
+  // Brave Search
+  BRAVE_API_KEY:              "brave_api_key",
+  BRAVE_ANSWERS_API_KEY:      "brave_answers_api_key",
+
+  // Firecrawl / Tavily (Web Scholar)
+  FIRECRAWL_API_KEY:          "firecrawl_api_key",
+  TAVILY_API_KEY:             "tavily_api_key",
+
+  // Storage
+  PRISM_STORAGE:              "prism_storage",
+  SUPABASE_URL:               "supabase_url",
+  SUPABASE_KEY:               "supabase_key",
+
+  // Dashboard
+  PRISM_DASHBOARD_PORT:       "dashboard_port",
+
+  // User identity
+  PRISM_USER_ID:              "user_id",
+  PRISM_INSTANCE:             "instance_name",
+
+  // Feature flags
+  PRISM_SCHOLAR_ENABLED:      "scholar_enabled",
+  PRISM_SCHOLAR_INTERVAL_MS:  "scholar_interval_ms",
+  PRISM_SCHOLAR_TOPICS:       "scholar_topics",
+  PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN: "scholar_max_articles",
+  PRISM_AUTO_CAPTURE:         "auto_capture_enabled",
+  PRISM_DARK_FACTORY_ENABLED: "dark_factory_enabled",
+  PRISM_DEBUG_LOGGING:        "debug_logging",
+  PRISM_SCHEDULER_ENABLED:    "scheduler_enabled",
+  PRISM_SCHEDULER_INTERVAL_MS: "scheduler_interval_ms",
+  PRISM_HDC_ENABLED:          "hdc_enabled",
+  PRISM_GRAPH_PRUNING_ENABLED: "graph_pruning_enabled",
+  PRISM_ACTR_ENABLED:         "actr_enabled",
+  PRISM_SYNAPSE_ENABLED:      "synapse_enabled",
+  PRISM_VALENCE_ENABLED:      "valence_enabled",
+  PRISM_COGNITIVE_BUDGET_ENABLED: "cognitive_budget_enabled",
+  PRISM_SURPRISAL_GATE_ENABLED: "surprisal_gate_enabled",
+  PRISM_VERIFICATION_HARNESS_ENABLED: "verification_enabled",
+  PRISM_TASK_ROUTER_ENABLED_ENV: "task_router_enabled",
+};
+
 export async function initConfigStorage() {
   if (initialized) return;
 
@@ -62,6 +134,39 @@ export async function initConfigStorage() {
     for (const row of rs.rows) {
       settingsCache[row.key as string] = row.value as string;
     }
+
+    // ── First-run bootstrap ───────────────────────────────────────────
+    // On first run (no _prism_bootstrapped flag in DB), seed the DB from
+    // process.env so that MCP harness "env" blocks and .env files get
+    // written into the DB as initial values. After bootstrap, env vars
+    // are ignored — the dashboard is the single source of truth.
+    if (!settingsCache["_prism_bootstrapped"]) {
+      let seeded = 0;
+      for (const [envKey, settingKey] of Object.entries(ENV_TO_SETTING)) {
+        const val = process.env[envKey];
+        if (val !== undefined && val !== "" && !settingsCache[settingKey]) {
+          await client.execute({
+            sql: `INSERT INTO system_settings (key, value, updated_at)
+                  VALUES (?, ?, CURRENT_TIMESTAMP)
+                  ON CONFLICT(key) DO NOTHING`,
+            args: [settingKey, val],
+          });
+          settingsCache[settingKey] = val;
+          seeded++;
+        }
+      }
+      // Mark bootstrap complete so we never re-seed from env.
+      await client.execute({
+        sql: `INSERT INTO system_settings (key, value, updated_at)
+              VALUES ('_prism_bootstrapped', 'true', CURRENT_TIMESTAMP)
+              ON CONFLICT(key) DO NOTHING`,
+        args: [],
+      });
+      settingsCache["_prism_bootstrapped"] = "true";
+      if (seeded > 0) {
+        console.error(`[configStorage] Bootstrap: seeded ${seeded} settings from env vars`);
+      }
+    }
   } catch (err) {
     // Graceful degradation: if the DB can't be opened (e.g. read-only
     // filesystem in a sandboxed container), fall back to an empty cache.
@@ -69,30 +174,6 @@ export async function initConfigStorage() {
     // will attempt to re-open the DB on first call.
     console.error(`[configStorage] Failed to initialize (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
     settingsCache = {};
-  }
-
-  // ── Env-var override layer ──────────────────────────────────────────
-  // MCP harness configs inject settings via process.env (the "env" block
-  // in mcpServers entries). Overlay these onto the cache so they take
-  // precedence over SQLite values. This is how the Bonsai launcher's
-  // "Deploy Prism" flow configures the llamacpp provider without needing
-  // to pre-populate the SQLite config DB.
-  const ENV_TO_SETTING: Record<string, string> = {
-    TEXT_PROVIDER:            "text_provider",
-    EMBEDDING_PROVIDER:       "embedding_provider",
-    LLAMACPP_TEXT_URL:        "llamacpp_text_url",
-    LLAMACPP_TEXT_MODEL:      "llamacpp_text_model",
-    LLAMACPP_EMBEDDING_URL:   "llamacpp_embedding_url",
-    LLAMACPP_EMBEDDING_MODEL: "llamacpp_embedding_model",
-    PRISM_DASHBOARD_PORT:     "dashboard_port",
-  };
-  if (settingsCache) {
-    for (const [envKey, settingKey] of Object.entries(ENV_TO_SETTING)) {
-      const val = process.env[envKey];
-      if (val !== undefined && val !== "") {
-        settingsCache[settingKey] = val;
-      }
-    }
   }
 
   initialized = true;

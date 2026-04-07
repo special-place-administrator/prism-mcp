@@ -1049,6 +1049,34 @@ export function renderDashboardHTML(version: string): string {
         </div>
         <div class="setting-row">
           <div>
+            <div class="setting-label">Dark Factory</div>
+            <div class="setting-desc">Autonomous background pipeline runner (PLAN → EXECUTE → VERIFY)</div>
+          </div>
+          <div class="toggle" id="toggle-dark-factory" onclick="toggleBootSetting('dark_factory_enabled', this)"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Web Scholar</div>
+            <div class="setting-desc">Background LLM research pipeline (requires Brave + Firecrawl/Tavily)</div>
+          </div>
+          <div class="toggle" id="toggle-scholar" onclick="toggleBootSetting('scholar_enabled', this)"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Background Scheduler</div>
+            <div class="setting-desc">Automated maintenance: TTL sweep, decay, compaction (12h cycle)</div>
+          </div>
+          <div class="toggle" id="toggle-scheduler" onclick="toggleBootSetting('scheduler_enabled', this)"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Debug Logging</div>
+            <div class="setting-desc">Verbose output for initialization, indexing, background tasks</div>
+          </div>
+          <div class="toggle" id="toggle-debug-logging" onclick="toggleBootSetting('debug_logging', this)"></div>
+        </div>
+        <div class="setting-row">
+          <div>
             <div class="setting-label">Storage Backend</div>
             <div class="setting-desc">Switch between SQLite and Supabase</div>
           </div>
@@ -1235,8 +1263,8 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
               <input type="password" id="input-google-api-key"
                 placeholder="AIza…"
                 style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 180px;"
-                onchange="saveBootSetting('GOOGLE_API_KEY', this.value)"
-                oninput="clearTimeout(this._pt); var self=this; this._pt=setTimeout(function(){saveBootSetting('GOOGLE_API_KEY',self.value)},800)" />
+                onchange="saveBootSetting('google_api_key', this.value)"
+                oninput="clearTimeout(this._pt); var self=this; this._pt=setTimeout(function(){saveBootSetting('google_api_key',self.value)},800)" />
             </div>
           </div>
 
@@ -1447,6 +1475,69 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
                 onchange="saveBootSetting('llamacpp_embedding_model', this.value)"
                 oninput="clearTimeout(this._pem); var self=this; this._pem=setTimeout(function(){saveBootSetting('llamacpp_embedding_model',self.value)},800)" />
             </div>
+          </div>
+
+          <!-- ── External Service API Keys ──────────────────────── -->
+          <div class="setting-section" style="margin-top:1.5rem">Service API Keys</div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Brave Search API Key</div>
+              <div class="setting-desc">Required for web search tools</div>
+            </div>
+            <input type="password" id="input-brave-api-key"
+              placeholder="BSA…"
+              style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 180px;"
+              onchange="saveBootSetting('brave_api_key', this.value)"
+              oninput="clearTimeout(this._bk); var self=this; this._bk=setTimeout(function(){saveBootSetting('brave_api_key',self.value)},800)" />
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Brave Answers API Key</div>
+              <div class="setting-desc">Optional — enables AI-grounded brave_answers tool</div>
+            </div>
+            <input type="password" id="input-brave-answers-api-key"
+              placeholder="BSA… (optional)"
+              style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 180px;"
+              onchange="saveBootSetting('brave_answers_api_key', this.value)"
+              oninput="clearTimeout(this._bak); var self=this; this._bak=setTimeout(function(){saveBootSetting('brave_answers_api_key',self.value)},800)" />
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Voyage AI API Key</div>
+              <div class="setting-desc">Optional — enables Voyage embeddings (recommended by Anthropic)</div>
+            </div>
+            <input type="password" id="input-voyage-api-key"
+              placeholder="pa-… (optional)"
+              style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 180px;"
+              onchange="saveBootSetting('voyage_api_key', this.value)"
+              oninput="clearTimeout(this._vk); var self=this; this._vk=setTimeout(function(){saveBootSetting('voyage_api_key',self.value)},800)" />
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Firecrawl API Key</div>
+              <div class="setting-desc">Optional — enables web scraping for Scholar pipeline</div>
+            </div>
+            <input type="password" id="input-firecrawl-api-key"
+              placeholder="fc-… (optional)"
+              style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 180px;"
+              onchange="saveBootSetting('firecrawl_api_key', this.value)"
+              oninput="clearTimeout(this._fck); var self=this; this._fck=setTimeout(function(){saveBootSetting('firecrawl_api_key',self.value)},800)" />
+          </div>
+
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">Tavily API Key</div>
+              <div class="setting-desc">Optional — alternative to Firecrawl for Scholar</div>
+            </div>
+            <input type="password" id="input-tavily-api-key"
+              placeholder="tvly-… (optional)"
+              style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 180px;"
+              onchange="saveBootSetting('tavily_api_key', this.value)"
+              oninput="clearTimeout(this._tvk); var self=this; this._tvk=setTimeout(function(){saveBootSetting('tavily_api_key',self.value)},800)" />
           </div>
 
           <div style="margin-top:1rem;padding:0.6rem 0.8rem;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:6px;font-size:0.78rem;color:var(--text-secondary);line-height:1.5">
@@ -3511,7 +3602,7 @@ function loadAiProviderSettings() {
                     if (lcEm && s.llamacpp_embedding_model) lcEm.value = s.llamacpp_embedding_model;
                     gKey = document.getElementById('input-google-api-key');
                     if (gKey)
-                        gKey.placeholder = s.GOOGLE_API_KEY ? '(key saved — paste to update)' : 'AIza…';
+                        gKey.placeholder = s.google_api_key ? '(key saved — paste to update)' : 'AIza…';
                     aKey = document.getElementById('input-anthropic-api-key');
                     if (aKey)
                         aKey.placeholder = s.anthropic_api_key ? '(key saved — paste to update)' : 'sk-ant-…';
@@ -3530,6 +3621,22 @@ function loadAiProviderSettings() {
                     oEmb = document.getElementById('input-openai-embedding-model');
                     if (oEmb && s.openai_embedding_model)
                         oEmb.value = s.openai_embedding_model;
+                    // Service API keys
+                    var braveKey = document.getElementById('input-brave-api-key');
+                    if (braveKey)
+                        braveKey.placeholder = s.brave_api_key ? '(key saved — paste to update)' : 'BSA…';
+                    var braveAnsKey = document.getElementById('input-brave-answers-api-key');
+                    if (braveAnsKey)
+                        braveAnsKey.placeholder = s.brave_answers_api_key ? '(key saved — paste to update)' : 'BSA… (optional)';
+                    var voyageKey = document.getElementById('input-voyage-api-key');
+                    if (voyageKey)
+                        voyageKey.placeholder = s.voyage_api_key ? '(key saved — paste to update)' : 'pa-… (optional)';
+                    var firecrawlKey = document.getElementById('input-firecrawl-api-key');
+                    if (firecrawlKey)
+                        firecrawlKey.placeholder = s.firecrawl_api_key ? '(key saved — paste to update)' : 'fc-… (optional)';
+                    var tavilyKey = document.getElementById('input-tavily-api-key');
+                    if (tavilyKey)
+                        tavilyKey.placeholder = s.tavily_api_key ? '(key saved — paste to update)' : 'tvly-… (optional)';
                     return [3 /*break*/, 4];
                 case 3:
                     e_16 = _a.sent();
@@ -3703,16 +3810,34 @@ function loadSettings() {
                         document.getElementById('toggle-task-router').classList.add('active');
                     else
                         document.getElementById('toggle-task-router').classList.remove('active');
+                    if (s.dark_factory_enabled === 'true')
+                        document.getElementById('toggle-dark-factory').classList.add('active');
+                    else
+                        document.getElementById('toggle-dark-factory').classList.remove('active');
+                    if (s.scholar_enabled === 'true')
+                        document.getElementById('toggle-scholar').classList.add('active');
+                    else
+                        document.getElementById('toggle-scholar').classList.remove('active');
+                    if (s.scheduler_enabled !== 'false')
+                        document.getElementById('toggle-scheduler').classList.add('active');
+                    else
+                        document.getElementById('toggle-scheduler').classList.remove('active');
+                    if (s.debug_logging === 'true')
+                        document.getElementById('toggle-debug-logging').classList.add('active');
+                    else
+                        document.getElementById('toggle-debug-logging').classList.remove('active');
                     // Storage Backend
-                    if (s.PRISM_STORAGE) {
-                        document.getElementById('storageBackendSelect').value = s.PRISM_STORAGE;
+                    var storageVal = s.prism_storage || s.PRISM_STORAGE;
+                    if (storageVal) {
+                        document.getElementById('storageBackendSelect').value = storageVal;
                         var supFields = document.getElementById('provider-fields-supabase');
-                        if (supFields) supFields.style.display = s.PRISM_STORAGE === 'supabase' ? '' : 'none';
+                        if (supFields) supFields.style.display = storageVal === 'supabase' ? '' : 'none';
                     }
-                    if (s.SUPABASE_URL) {
-                        document.getElementById('input-supabase-url').value = s.SUPABASE_URL;
+                    var supUrl = s.supabase_url || s.SUPABASE_URL;
+                    if (supUrl) {
+                        document.getElementById('input-supabase-url').value = supUrl;
                     }
-                    if (s.SUPABASE_SERVICE_KEY) {
+                    if (s.supabase_key || s.SUPABASE_SERVICE_KEY) {
                         document.getElementById('input-supabase-key').placeholder = '(key saved — paste to update)';
                     }
                     // Agent Identity

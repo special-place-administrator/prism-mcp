@@ -85,7 +85,7 @@ export class VoyageAdapter implements LLMProvider {
   private apiKey: string;
 
   constructor() {
-    const apiKey = getSettingSync("voyage_api_key", process.env.VOYAGE_API_KEY ?? "");
+    const apiKey = getSettingSync("voyage_api_key", "");
 
     if (!apiKey) {
       throw new Error(

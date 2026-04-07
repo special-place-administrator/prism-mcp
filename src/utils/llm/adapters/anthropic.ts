@@ -53,7 +53,7 @@ export class AnthropicAdapter implements LLMProvider {
   private client: Anthropic;
 
   constructor() {
-    const apiKey = getSettingSync("anthropic_api_key", process.env.ANTHROPIC_API_KEY ?? "");
+    const apiKey = getSettingSync("anthropic_api_key", "");
 
     if (!apiKey) {
       throw new Error(

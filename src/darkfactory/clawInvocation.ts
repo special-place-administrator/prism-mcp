@@ -1,5 +1,4 @@
 import { getLLMProvider } from '../utils/llm/factory.js';
-import { OpenAIAdapter } from '../utils/llm/adapters/openai.js';
 import { PipelineSpec } from './schema.js';
 import { PipelineState } from '../storage/interface.js';
 import { SafetyController } from './safetyController.js';
@@ -83,11 +82,7 @@ export async function invokeClawAgent(
   timeoutMs = 120000 // 2 min default timeout for internal executions
 ): Promise<{ success: boolean; resultText: string }> {
 
-  // BYOM Override: Provide path to use alternative open-source pipelines 
-  // (e.g. through the OpenAI structured adapter which also points to local endpoints like Ollama / vLLM if configured)
-  const llm = spec.modelOverride 
-    ? new OpenAIAdapter() // Bypasses the factory to route locally
-    : getLLMProvider();
+  const llm = getLLMProvider();
 
   // Scope injection via SafetyController — single source of truth
   const systemPrompt = SafetyController.generateBoundaryPrompt(spec, state);

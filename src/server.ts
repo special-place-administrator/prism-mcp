@@ -216,7 +216,7 @@ const BASE_TOOLS: Tool[] = [
   BRAVE_LOCAL_SEARCH_CODE_MODE_TOOL,  // brave_local_search_code_mode — local search + JS extraction
   CODE_MODE_TRANSFORM_TOOL,           // code_mode_transform — universal post-processing
   BRAVE_ANSWERS_TOOL,                 // brave_answers — AI-grounded answers
-  RESEARCH_PAPER_ANALYSIS_TOOL,       // gemini_research_paper_analysis — paper analysis
+  RESEARCH_PAPER_ANALYSIS_TOOL,       // research_paper_analysis — paper analysis
 ];
 
 // ─── v4.1 FIX: Build Session Memory Tools dynamically ────────
@@ -776,7 +776,8 @@ export function createServer() {
           case "brave_answers":
             result = await braveAnswersHandler(args); break;
 
-          case "gemini_research_paper_analysis":
+          case "research_paper_analysis":
+          case "gemini_research_paper_analysis":  // legacy alias
             result = await researchPaperAnalysisHandler(args); break;
 
           // ── Session Memory Tools (only callable when Supabase is configured) ──
@@ -1115,26 +1116,6 @@ export function createSandboxServer() {
  *
  * Covers: feature flags (Hivemind, Task Router, Dark Factory) and Supabase credentials.
  */
-async function migrateEnvToConfigStorage(): Promise<void> {
-  const migrations: Array<{ dbKey: string; envValue: string | undefined }> = [
-    // Feature flags
-    { dbKey: "hivemind_enabled",    envValue: process.env.PRISM_ENABLE_HIVEMIND    ? (process.env.PRISM_ENABLE_HIVEMIND === "true" ? "true" : "false")    : undefined },
-    { dbKey: "task_router_enabled", envValue: process.env.PRISM_TASK_ROUTER_ENABLED ? (process.env.PRISM_TASK_ROUTER_ENABLED === "true" ? "true" : "false") : undefined },
-    { dbKey: "dark_factory_enabled",envValue: process.env.PRISM_DARK_FACTORY_ENABLED ? (process.env.PRISM_DARK_FACTORY_ENABLED === "true" ? "true" : "false") : undefined },
-    // Supabase credentials — only migrate if present and non-empty
-    { dbKey: "SUPABASE_URL",        envValue: process.env.SUPABASE_URL  || undefined },
-    { dbKey: "SUPABASE_KEY",        envValue: process.env.SUPABASE_KEY  || undefined },
-    { dbKey: "PRISM_STORAGE",       envValue: process.env.PRISM_STORAGE || undefined },
-  ];
-
-  for (const { dbKey, envValue } of migrations) {
-    if (!envValue) continue; // env var not set — nothing to migrate
-    const existing = getSettingSync(dbKey, "");
-    if (existing !== "") continue; // already has a value — never overwrite
-    await setSetting(dbKey, envValue);
-    console.error(`[Prism] Migrated env var → configStorage: ${dbKey} = ${dbKey.toLowerCase().includes("key") ? "***" : envValue}`);
-  }
-}
 
 export async function startServer() {
 
@@ -1147,14 +1128,6 @@ export async function startServer() {
   // during the Initialize handshake — zero extra latency for resource reads.
   // initConfigStorage() is local SQLite only (~5ms), safe to await.
   await initConfigStorage();
-
-  // v9.2: One-time env-to-configStorage migration.
-  // For users who previously set feature flags/Supabase credentials via env
-  // vars, seed configStorage with those values IF the key doesn't exist yet.
-  // This is "setIfAbsent" logic — it never overwrites a dashboard-set value.
-  // After this runs, the dashboard toggles reflect the actual runtime state.
-  await migrateEnvToConfigStorage();
-
 
   // v4.6.0: Initialize OTel AFTER the settings cache is warm so that
   // initTelemetry() can read otel_enabled/otel_endpoint from getSettingSync()

@@ -248,7 +248,7 @@ export async function braveAnswersHandler(args: unknown) {
  */
 export async function researchPaperAnalysisHandler(args: unknown) {
   if (!isGeminiResearchPaperAnalysisArgs(args)) {
-    throw new Error("Invalid arguments for gemini_research_paper_analysis");
+    throw new Error("Invalid arguments for research_paper_analysis");
   }
 
   const { paperContent, analysisType = "comprehensive", additionalContext } = args;

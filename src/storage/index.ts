@@ -23,21 +23,16 @@ function isHttpUrl(value: string): boolean {
  * On first call: creates and initializes the appropriate backend.
  * On subsequent calls: returns the cached instance.
  *
- * SUPABASE CREDENTIAL RESOLUTION ORDER (v9.2):
- *   1. configStorage (prism-config.db)           (set via Mind Palace dashboard)
- *   2. process.env.SUPABASE_URL / SUPABASE_KEY  (env var fallback)
- *
- * If credentials are found only in configStorage, they are injected into
- * process.env so that supabaseApi.ts (which reads module-level constants
- * from config.ts) picks them up on the same startup cycle.
+ * SUPABASE CREDENTIAL RESOLUTION ORDER:
+ *   Single source of truth: prism-config.db (set via Mind Palace dashboard).
+ *   Env vars are bootstrapped into the DB on first run by configStorage.ts.
  */
 export async function getStorage(): Promise<StorageBackend> {
   if (storageInstance) return storageInstance;
 
-  // SOURCE OF TRUTH: prism-config.db (dashboard) → env fallback → "local" default
-  // DB wins because the dashboard is the authoritative source post-migration.
-  const dbStorage = await getSetting("PRISM_STORAGE", "");
-  const requestedBackend = (dbStorage || process.env.PRISM_STORAGE || "local") as "supabase" | "local";
+  // Single source of truth: prism-config.db (dashboard).
+  const dbStorage = await getSetting("prism_storage", "");
+  const requestedBackend = (dbStorage || "local") as "supabase" | "local";
 
   if (requestedBackend === "supabase") {
     // ─── Resolve credentials: configStorage → env var fallback ──────────
@@ -46,13 +41,13 @@ export async function getStorage(): Promise<StorageBackend> {
     // Supabase via the dashboard, the values live in configStorage. Env vars
     // are only used as a fallback for users who haven't migrated yet.
     const resolvedUrl =
-      await getSetting("SUPABASE_URL", "") ||
-      process.env.SUPABASE_URL ||
+      await getSetting("supabase_url", "") ||
+      await getSetting("SUPABASE_URL", "") ||  // legacy key compat
       "";
     const resolvedKey =
-      await getSetting("SUPABASE_KEY", "") ||
+      await getSetting("supabase_key", "") ||
+      await getSetting("SUPABASE_KEY", "") ||  // legacy key compat
       await getSetting("SUPABASE_SERVICE_ROLE_KEY", "") ||
-      process.env.SUPABASE_KEY ||
       "";
 
     const isConfigured = !!resolvedUrl && !!resolvedKey && isHttpUrl(resolvedUrl);
@@ -61,19 +56,12 @@ export async function getStorage(): Promise<StorageBackend> {
       activeStorageBackend = "local";
       console.error(
         "[Prism Storage] Supabase backend requested but credentials are missing or invalid " +
-        "(checked both process.env and prism-config.db). Falling back to local storage.\n" +
-        "  → Configure via Mind Palace dashboard (Settings → Storage Backend → Supabase) or set SUPABASE_URL / SUPABASE_KEY env vars."
+        "(prism-config.db). Falling back to local storage.\n" +
+        "  → Configure via Mind Palace dashboard (Settings → Storage Backend → Supabase)."
       );
     } else {
-      // Inject resolved credentials into process.env so supabaseApi.ts
-      // (which reads config.ts module-level constants) can use them.
-      // This is safe: process.env injection only affects in-process lookups;
-      // it doesn't mutate the shell environment of the parent process.
-      // Always overwrite — DB is the source of truth post-v9.2.
-      process.env.SUPABASE_URL  = resolvedUrl;
-      process.env.SUPABASE_KEY  = resolvedKey;
       activeStorageBackend = "supabase";
-      debugLog(`[Prism Storage] Supabase credentials resolved (source: ${await getSetting("SUPABASE_URL", "") ? "configStorage" : "env"})`);
+      debugLog(`[Prism Storage] Supabase credentials resolved from configStorage`);
     }
   } else {
     activeStorageBackend = requestedBackend;

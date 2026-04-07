@@ -4,26 +4,12 @@ import { fileURLToPath } from "node:url";
 import { getSettingSync } from "./storage/configStorage.js";
 
 /**
- * Configuration & Environment Variables
+ * Configuration — Single Source of Truth: prism-config.db
  *
- * This file is loaded once at startup. It reads environment variables,
- * validates required ones, and exports them for use throughout the server.
- *
- * Environment variable guide:
- *   BRAVE_API_KEY          — (required) API key for Brave Search Pro. Get one at https://brave.com/search/api/
- *   GOOGLE_API_KEY         — (optional) API key for Google AI Studio / Gemini. Enables paper analysis.
- *   BRAVE_ANSWERS_API_KEY  — (optional) API key for Brave Answers (AI grounding). Enables brave_answers tool.
- *   SUPABASE_URL           — (optional) Your Supabase project URL. Enables session memory tools.
- *   SUPABASE_KEY           — (optional) Your Supabase anon/service key. Enables session memory tools.
- *   PRISM_USER_ID          — (optional) Unique tenant ID for multi-user Supabase instances.
- *                            Defaults to "default". Set per-user in Claude Desktop config.
- *   VOYAGE_API_KEY         — (optional) API key for Voyage AI embeddings. Enables embedding_provider=voyage.
- *                            Voyage AI is the embedding provider recommended by Anthropic for use with
- *                            Claude. Get a free key at https://dash.voyageai.com.
- *
- * If a required key is missing, the process exits immediately.
- * If an optional key is missing, a warning is logged but the server continues
- * with reduced functionality (the corresponding tools will be unavailable).
+ * All settings are read from prism-config.db via getSettingSync().
+ * The Mind Palace dashboard (http://localhost:3333) is the UI for managing
+ * these settings. On first run, env vars are bootstrapped into the DB
+ * by configStorage.ts — after that, env vars are ignored.
  */
 
 // ─── Server Identity ──────────────────────────────────────────
@@ -49,40 +35,14 @@ export const SERVER_CONFIG = {
   version: resolveServerVersion(),
 };
 
-// ─── Required: Brave Search API Key ───────────────────────────
+// ─── API Keys ─────────────────────────────────────────────────
+// All keys are read from prism-config.db (managed via dashboard).
+// On first run, env vars are bootstrapped into the DB by configStorage.
 
-export const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
-if (!BRAVE_API_KEY) {
-  console.error("Warning: BRAVE_API_KEY environment variable is missing. Search tools will return errors when called.");
-}
-
-// ─── Optional: Google Gemini API Key ──────────────────────────
-// Used by the gemini_research_paper_analysis tool.
-// Without this, the tool will still appear but will error when called.
-
-export const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
-if (!GOOGLE_API_KEY) {
-  console.error("Warning: GOOGLE_API_KEY environment variable is missing. Gemini research features will be unavailable.");
-}
-
-// ─── Optional: Brave Answers API Key ──────────────────────────
-// Used by the brave_answers tool for AI-grounded answers.
-// This is a separate API key from the main Brave Search key.
-
-export const BRAVE_ANSWERS_API_KEY = process.env.BRAVE_ANSWERS_API_KEY;
-if (!BRAVE_ANSWERS_API_KEY) {
-  console.error("Warning: BRAVE_ANSWERS_API_KEY environment variable is missing. Brave Answers tool will be unavailable.");
-}
-
-// ─── Optional: Voyage AI API Key ──────────────────────────────
-// Used when embedding_provider = "voyage" in the dashboard.
-// Voyage AI is the embedding provider recommended by Anthropic for use
-// alongside Claude. voyage-3 supports 768-dim output via MRL truncation,
-// matching Prism's storage schema for zero-migration drop-in replacement.
-// Without this, VoyageAdapter construction will throw at server start if
-// embedding_provider=voyage is selected.
-
-export const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
+export const BRAVE_API_KEY = getSettingSync("brave_api_key", "");
+export const GOOGLE_API_KEY = getSettingSync("google_api_key", "");
+export const BRAVE_ANSWERS_API_KEY = getSettingSync("brave_answers_api_key", "");
+export const VOYAGE_API_KEY = getSettingSync("voyage_api_key", "");
 
 // ─── v2.0: Storage Backend Selection ─────────────────────────
 // REVIEWER NOTE: Step 1 of v2.0 introduces a storage abstraction.
@@ -92,12 +52,8 @@ export const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
 // Set PRISM_STORAGE=local to use SQLite (once implemented).
 // Set PRISM_STORAGE=supabase to use Supabase REST API (default).
 
-// NOTE: This constant captures the env-var snapshot at import time.
-// The actual storage backend decision is made in storage/index.ts,
-// which consults prism-config.db first, then process.env, then defaults to "local".
 export const PRISM_STORAGE: "local" | "supabase" =
-  (process.env.PRISM_STORAGE as "local" | "supabase") || "local";
-// Logged at debug level — see debug() at bottom of file
+  (getSettingSync("prism_storage", "local") as "local" | "supabase");
 
 // ─── Optional: Supabase (Session Memory Module) ───────────────
 // When both SUPABASE_URL and SUPABASE_KEY are set, session memory tools
@@ -121,18 +77,13 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-export const SUPABASE_URL = sanitizeEnv(process.env.SUPABASE_URL);
-export const SUPABASE_KEY = sanitizeEnv(process.env.SUPABASE_KEY);
+export const SUPABASE_URL = sanitizeEnv(getSettingSync("supabase_url", ""));
+export const SUPABASE_KEY = sanitizeEnv(getSettingSync("supabase_key", ""));
 export const SUPABASE_CONFIGURED =
   !!SUPABASE_URL &&
   !!SUPABASE_KEY &&
   isHttpUrl(SUPABASE_URL);
 
-if (process.env.SUPABASE_URL && !SUPABASE_URL) {
-  console.error(
-    "Warning: SUPABASE_URL appears unresolved/empty (e.g. template placeholder). Falling back to local storage unless explicitly fixed."
-  );
-}
 if (SUPABASE_URL && !isHttpUrl(SUPABASE_URL)) {
   console.error("Warning: SUPABASE_URL is not a valid http(s) URL. Falling back to local storage.");
 }
@@ -140,7 +91,7 @@ if (SUPABASE_URL && !isHttpUrl(SUPABASE_URL)) {
 export const SESSION_MEMORY_ENABLED = true;
 
 // Optional multi-tenant scope ID (used by storage queries and handoffs).
-export const PRISM_USER_ID = process.env.PRISM_USER_ID || "default";
+export const PRISM_USER_ID = getSettingSync("user_id", "default");
 
 
 // ─── v2.1: Auto-Capture Feature ─────────────────────────────
@@ -148,8 +99,8 @@ export const PRISM_USER_ID = process.env.PRISM_USER_ID || "default";
 // when handoffs are saved. Prevents UI context loss between sessions.
 // Opt-in only — set PRISM_AUTO_CAPTURE=true to enable.
 
-export const PRISM_AUTO_CAPTURE = process.env.PRISM_AUTO_CAPTURE === "true";
-export const PRISM_CAPTURE_PORTS = (process.env.PRISM_CAPTURE_PORTS || "3000,3001,5173,8080")
+export const PRISM_AUTO_CAPTURE = getSettingSync("auto_capture_enabled", "false") === "true";
+export const PRISM_CAPTURE_PORTS = getSettingSync("capture_ports", "3000,3001,5173,8080")
   .split(",")
   .map(p => parseInt(p.trim(), 10))
   .filter(p => !isNaN(p));
@@ -158,7 +109,7 @@ export const PRISM_CAPTURE_PORTS = (process.env.PRISM_CAPTURE_PORTS || "3000,300
 // Optionally enable verbose output (stderr) for Prism initialization,
 // memory indexing, and background tasks.
 
-export const PRISM_DEBUG_LOGGING = process.env.PRISM_DEBUG_LOGGING === "true";
+export const PRISM_DEBUG_LOGGING = getSettingSync("debug_logging", "false") === "true";
 
 // ─── v3.0: Agent Hivemind Feature Flag ───────────────────────
 // When enabled, registers 3 additional MCP tools for multi-agent
@@ -170,11 +121,7 @@ export const PRISM_DEBUG_LOGGING = process.env.PRISM_DEBUG_LOGGING === "true";
 // SOURCE OF TRUTH: The Mind Palace dashboard (Settings → Hivemind Mode)
 // persists this flag to prism-config.db via getSettingSync() at call time.
 //
-// ⚠️ IMPORTANT: This _ENV constant captures ONLY the env-var fallback.
-// config.ts is evaluated at ESM import time, BEFORE initConfigStorage()
-// populates the settings cache. Use getSettingSync("hivemind_enabled",
-// String(PRISM_ENABLE_HIVEMIND_ENV)) at each call site for the live value.
-export const PRISM_ENABLE_HIVEMIND_ENV = process.env.PRISM_ENABLE_HIVEMIND === "true";
+export const PRISM_ENABLE_HIVEMIND_ENV = getSettingSync("hivemind_enabled", "false") === "true";
 
 // ─── v3.0: Task Router Feature Flag ──────────────────────────
 // Routes tasks to the local Claw agent when enabled.
@@ -204,19 +151,19 @@ if (PRISM_AUTO_CAPTURE) {
 // All values have sane defaults. Override via env vars only for
 // testing or production tuning. Dashboard UI exposure deferred to v5.4.
 export const WATCHDOG_INTERVAL_MS = parseInt(
-  process.env.PRISM_WATCHDOG_INTERVAL_MS || "60000", 10
+  getSettingSync("watchdog_interval_ms", "60000"), 10
 );
 export const WATCHDOG_STALE_MIN = parseInt(
-  process.env.PRISM_WATCHDOG_STALE_MIN || "5", 10
+  getSettingSync("watchdog_stale_min", "5"), 10
 );
 export const WATCHDOG_FROZEN_MIN = parseInt(
-  process.env.PRISM_WATCHDOG_FROZEN_MIN || "15", 10
+  getSettingSync("watchdog_frozen_min", "15"), 10
 );
 export const WATCHDOG_OFFLINE_MIN = parseInt(
-  process.env.PRISM_WATCHDOG_OFFLINE_MIN || "30", 10
+  getSettingSync("watchdog_offline_min", "30"), 10
 );
 export const WATCHDOG_LOOP_THRESHOLD = parseInt(
-  process.env.PRISM_WATCHDOG_LOOP_THRESHOLD || "5", 10
+  getSettingSync("watchdog_loop_threshold", "5"), 10
 );
 
 // ─── v5.4: Background Purge Scheduler ────────────────────────
@@ -224,9 +171,9 @@ export const WATCHDOG_LOOP_THRESHOLD = parseInt(
 // compaction, and deep storage purge. Runs independently from
 // the Watchdog (different cadence: 12h vs 60s).
 export const PRISM_SCHEDULER_ENABLED =
-  process.env.PRISM_SCHEDULER_ENABLED !== "false"; // Default: true
+  getSettingSync("scheduler_enabled", "true") !== "false";
 export const PRISM_SCHEDULER_INTERVAL_MS = parseInt(
-  process.env.PRISM_SCHEDULER_INTERVAL_MS || "43200000", 10  // 12 hours
+  getSettingSync("scheduler_interval_ms", "43200000"), 10
 );
 
 // ─── v5.4: Autonomous Web Scholar ─────────────────────────────
@@ -234,20 +181,17 @@ export const PRISM_SCHEDULER_INTERVAL_MS = parseInt(
 // Tavily can be used as an alternative when TAVILY_API_KEY is set.
 // Defaults are conservative to prevent runaway API costs.
 
-export const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
-export const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
-export const PRISM_SCHOLAR_ENABLED = process.env.PRISM_SCHOLAR_ENABLED === "true"; // Opt-in
+export const FIRECRAWL_API_KEY = getSettingSync("firecrawl_api_key", "");
+export const TAVILY_API_KEY = getSettingSync("tavily_api_key", "");
+export const PRISM_SCHOLAR_ENABLED = getSettingSync("scholar_enabled", "false") === "true";
 
-if (PRISM_SCHOLAR_ENABLED && !FIRECRAWL_API_KEY && !TAVILY_API_KEY) {
-  console.error("Warning: Neither FIRECRAWL_API_KEY nor TAVILY_API_KEY is set. Web Scholar will fall back to free search.");
-}
 export const PRISM_SCHOLAR_INTERVAL_MS = parseInt(
-  process.env.PRISM_SCHOLAR_INTERVAL_MS || "0", 10  // Default manual-only
+  getSettingSync("scholar_interval_ms", "0"), 10
 );
 export const PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN = parseInt(
-  process.env.PRISM_SCHOLAR_MAX_ARTICLES_PER_RUN || "3", 10
+  getSettingSync("scholar_max_articles", "3"), 10
 );
-export const PRISM_SCHOLAR_TOPICS = (process.env.PRISM_SCHOLAR_TOPICS || "ai,agents")
+export const PRISM_SCHOLAR_TOPICS = getSettingSync("scholar_topics", "ai,agents")
   .split(",")
   .map(t => t.trim());
 
@@ -255,25 +199,25 @@ export const PRISM_SCHOLAR_TOPICS = (process.env.PRISM_SCHOLAR_TOPICS || "ai,age
 // Controls the age threshold for link strength decay.
 // Links not traversed in the last N days lose 0.1 strength per sweep.
 export const PRISM_LINK_DECAY_DAYS = parseInt(
-  process.env.PRISM_LINK_DECAY_DAYS || "30", 10
+  getSettingSync("link_decay_days", "30"), 10
 );
 
 // ─── v6.5: Cognitive Architecture (HDC Policy Gateway) ─────────────
 // Master feature flag for HDC-driven cognitive routing APIs.
-export const PRISM_HDC_ENABLED = process.env.PRISM_HDC_ENABLED === "true";
+export const PRISM_HDC_ENABLED = getSettingSync("hdc_enabled", "false") === "true";
 
 // Explainability payload toggle for cognitive routing responses.
 export const PRISM_HDC_EXPLAINABILITY_ENABLED =
-  process.env.PRISM_HDC_EXPLAINABILITY_ENABLED !== "false"; // default true
+  getSettingSync("hdc_explainability_enabled", "true") !== "false";
 
 const DEFAULT_HDC_FALLBACK_THRESHOLD = 0.85;
 const DEFAULT_HDC_CLARIFY_THRESHOLD = 0.95;
 
 const rawHdcFallbackThreshold = parseFloat(
-  process.env.PRISM_HDC_POLICY_FALLBACK_THRESHOLD || String(DEFAULT_HDC_FALLBACK_THRESHOLD)
+  getSettingSync("hdc_policy_fallback_threshold", String(DEFAULT_HDC_FALLBACK_THRESHOLD))
 );
 const rawHdcClarifyThreshold = parseFloat(
-  process.env.PRISM_HDC_POLICY_CLARIFY_THRESHOLD || String(DEFAULT_HDC_CLARIFY_THRESHOLD)
+  getSettingSync("hdc_policy_clarify_threshold", String(DEFAULT_HDC_CLARIFY_THRESHOLD))
 );
 
 const hdcThresholdsValid =
@@ -301,20 +245,20 @@ export const PRISM_HDC_POLICY_CLARIFY_THRESHOLD = hdcThresholdsValid
 // ─── v6.2: Graph Soft-Pruning ───────────────────────────────
 // Soft-pruning filters weak links from graph/retrieval reads while preserving
 // underlying rows for provenance. This does NOT delete links.
-export const PRISM_GRAPH_PRUNING_ENABLED = process.env.PRISM_GRAPH_PRUNING_ENABLED === "true";
+export const PRISM_GRAPH_PRUNING_ENABLED = getSettingSync("graph_pruning_enabled", "false") === "true";
 export const PRISM_GRAPH_PRUNE_MIN_STRENGTH = parseFloat(
-  process.env.PRISM_GRAPH_PRUNE_MIN_STRENGTH || "0.15"
+  getSettingSync("graph_prune_min_strength", "0.15")
 );
 
 // Scheduler-driven prune sweep controls (WS3)
 export const PRISM_GRAPH_PRUNE_PROJECT_COOLDOWN_MS = parseInt(
-  process.env.PRISM_GRAPH_PRUNE_PROJECT_COOLDOWN_MS || "600000", 10
+  getSettingSync("graph_prune_project_cooldown_ms", "600000"), 10
 );
 export const PRISM_GRAPH_PRUNE_SWEEP_BUDGET_MS = parseInt(
-  process.env.PRISM_GRAPH_PRUNE_SWEEP_BUDGET_MS || "30000", 10
+  getSettingSync("graph_prune_sweep_budget_ms", "30000"), 10
 );
 export const PRISM_GRAPH_PRUNE_MAX_PROJECTS_PER_SWEEP = parseInt(
-  process.env.PRISM_GRAPH_PRUNE_MAX_PROJECTS_PER_SWEEP || "25", 10
+  getSettingSync("graph_prune_max_projects_per_sweep", "25"), 10
 );
 
 // ─── v7.0: ACT-R Cognitive Memory Activation ────────────────
@@ -323,44 +267,44 @@ export const PRISM_GRAPH_PRUNE_MAX_PROJECTS_PER_SWEEP = parseInt(
 // a composite similarity + activation model.
 
 /** Master switch for ACT-R activation-based re-ranking. */
-export const PRISM_ACTR_ENABLED = process.env.PRISM_ACTR_ENABLED === "true";
+export const PRISM_ACTR_ENABLED = getSettingSync("actr_enabled", "false") === "true";
 
 /** ACT-R decay parameter d in t^(-d). Higher = faster forgetting. (Paper default: 0.5) */
-export const PRISM_ACTR_DECAY = parseFloat(process.env.PRISM_ACTR_DECAY || "0.5");
+export const PRISM_ACTR_DECAY = parseFloat(getSettingSync("actr_decay", "0.5"));
 
 /** Weight of cosine similarity in composite score. (Default: 0.7 — similarity dominates) */
 export const PRISM_ACTR_WEIGHT_SIMILARITY = parseFloat(
-  process.env.PRISM_ACTR_WEIGHT_SIMILARITY || "0.7"
+  getSettingSync("actr_weight_similarity", "0.7")
 );
 
 /** Weight of activation boost in composite score. (Default: 0.3 — activation re-ranks) */
 export const PRISM_ACTR_WEIGHT_ACTIVATION = parseFloat(
-  process.env.PRISM_ACTR_WEIGHT_ACTIVATION || "0.3"
+  getSettingSync("actr_weight_activation", "0.3")
 );
 
 /** Sigmoid midpoint: activation value that maps to 0.5 boost. (Default: -2.0) */
 export const PRISM_ACTR_SIGMOID_MIDPOINT = parseFloat(
-  process.env.PRISM_ACTR_SIGMOID_MIDPOINT || "-2.0"
+  getSettingSync("actr_sigmoid_midpoint", "-2.0")
 );
 
 /** Sigmoid steepness k. Higher = sharper discrimination. (Default: 1.0) */
 export const PRISM_ACTR_SIGMOID_STEEPNESS = parseFloat(
-  process.env.PRISM_ACTR_SIGMOID_STEEPNESS || "1.0"
+  getSettingSync("actr_sigmoid_steepness", "1.0")
 );
 
 /** Max access log entries per entry for base-level activation. (Default: 50) */
 export const PRISM_ACTR_MAX_ACCESSES_PER_ENTRY = parseInt(
-  process.env.PRISM_ACTR_MAX_ACCESSES_PER_ENTRY || "50", 10
+  getSettingSync("actr_max_accesses_per_entry", "50"), 10
 );
 
 /** AccessLogBuffer flush interval in milliseconds. (Default: 5000ms) */
 export const PRISM_ACTR_BUFFER_FLUSH_MS = parseInt(
-  process.env.PRISM_ACTR_BUFFER_FLUSH_MS || "5000", 10
+  getSettingSync("actr_buffer_flush_ms", "5000"), 10
 );
 
 /** Days to retain access log entries before pruning. (Default: 90) */
 export const PRISM_ACTR_ACCESS_LOG_RETENTION_DAYS = parseInt(
-  process.env.PRISM_ACTR_ACCESS_LOG_RETENTION_DAYS || "90", 10
+  getSettingSync("actr_access_log_retention_days", "90"), 10
 );
 
 // ─── v7.1: Task Router Configuration ─────────────────────────
@@ -369,51 +313,49 @@ export const PRISM_ACTR_ACCESS_LOG_RETENTION_DAYS = parseInt(
 // Set PRISM_TASK_ROUTER_ENABLED=true to unlock the session_task_route tool.
 
 /** Master switch for the task router tool. */
-export const PRISM_TASK_ROUTER_ENABLED_ENV = process.env.PRISM_TASK_ROUTER_ENABLED === "true";
+export const PRISM_TASK_ROUTER_ENABLED_ENV = getSettingSync("task_router_enabled", "false") === "true";
 
 /** Confidence threshold below which routing defaults to the host model. (Default: 0.6) */
 export const PRISM_TASK_ROUTER_CONFIDENCE_THRESHOLD = parseFloat(
-  process.env.PRISM_TASK_ROUTER_CONFIDENCE_THRESHOLD || "0.6"
+  getSettingSync("task_router_confidence_threshold", "0.6")
 );
 
 /** Maximum complexity score (1-10) that Claw can handle. Tasks above this → host. (Default: 4) */
 export const PRISM_TASK_ROUTER_MAX_CLAW_COMPLEXITY = parseInt(
-  process.env.PRISM_TASK_ROUTER_MAX_CLAW_COMPLEXITY || "4", 10
+  getSettingSync("task_router_max_claw_complexity", "4"), 10
 );
 
 // ─── v7.2: Verification Harness ──────────────────────────────
 
 /** Master switch for the v7.2.0 enhanced verification harness. */
 export const PRISM_VERIFICATION_HARNESS_ENABLED =
-  process.env.PRISM_VERIFICATION_HARNESS_ENABLED === "true";
+  getSettingSync("verification_enabled", "false") === "true";
 
 /** Comma-separated list of verification layers to run. */
-export const PRISM_VERIFICATION_LAYERS = (
-  process.env.PRISM_VERIFICATION_LAYERS || "data,agent,pipeline"
-).split(",").map(l => l.trim()).filter(Boolean);
+export const PRISM_VERIFICATION_LAYERS =
+  getSettingSync("verification_layers", "data,agent,pipeline")
+    .split(",").map(l => l.trim()).filter(Boolean);
 
 /** Default severity floor for all assertions. Overrides individual assertion severity when higher. */
 export const PRISM_VERIFICATION_DEFAULT_SEVERITY =
-  (process.env.PRISM_VERIFICATION_DEFAULT_SEVERITY || "warn") as "warn" | "gate" | "abort";
+  getSettingSync("verification_default_severity", "warn") as "warn" | "gate" | "abort";
 
 // ─── v7.3: Dark Factory Orchestration ─────────────────────────
 // Autonomous pipeline runner: PLAN → EXECUTE → VERIFY → iterate.
 // Opt-in because it executes LLM calls in the background.
 
-/** Master switch for the Dark Factory background runner.
- *  ⚠️ ENV-only fallback. Use getSettingSync("dark_factory_enabled",
- *  String(PRISM_DARK_FACTORY_ENABLED_ENV)) at call sites. */
+/** Master switch for the Dark Factory background runner. */
 export const PRISM_DARK_FACTORY_ENABLED_ENV =
-  process.env.PRISM_DARK_FACTORY_ENABLED === "true"; // Opt-in
+  getSettingSync("dark_factory_enabled", "false") === "true";
 
 /** Poll interval for the runner loop (ms). Default: 30s. */
 export const PRISM_DARK_FACTORY_POLL_MS = parseInt(
-  process.env.PRISM_DARK_FACTORY_POLL_MS || "30000", 10
+  getSettingSync("dark_factory_poll_ms", "30000"), 10
 );
 
 /** Default max wall-clock time per pipeline (ms). Default: 15 minutes. */
 export const PRISM_DARK_FACTORY_MAX_RUNTIME_MS = parseInt(
-  process.env.PRISM_DARK_FACTORY_MAX_RUNTIME_MS || "900000", 10
+  getSettingSync("dark_factory_max_runtime_ms", "900000"), 10
 );
 
 // ─── v8.0: Synapse — Spreading Activation Engine ──────────────
@@ -423,26 +365,26 @@ export const PRISM_DARK_FACTORY_MAX_RUNTIME_MS = parseInt(
 
 /** Master switch for the Synapse engine. Enabled by default (opt-out). */
 export const PRISM_SYNAPSE_ENABLED =
-  (process.env.PRISM_SYNAPSE_ENABLED ?? "true") !== "false";
+  getSettingSync("synapse_enabled", "true") !== "false";
 
 /** Number of propagation iterations (depth). Higher = deeper traversal, more latency. (Default: 3) */
 export const PRISM_SYNAPSE_ITERATIONS = parseInt(
-  process.env.PRISM_SYNAPSE_ITERATIONS || "3", 10
+  getSettingSync("synapse_iterations", "3"), 10
 );
 
 /** Energy attenuation per hop. Must be < 1.0 for convergence. (Default: 0.8) */
 export const PRISM_SYNAPSE_SPREAD_FACTOR = parseFloat(
-  process.env.PRISM_SYNAPSE_SPREAD_FACTOR || "0.8"
+  getSettingSync("synapse_spread_factor", "0.8")
 );
 
 /** Hard cap on final output nodes (lateral inhibition). (Default: 7) */
 export const PRISM_SYNAPSE_LATERAL_INHIBITION = parseInt(
-  process.env.PRISM_SYNAPSE_LATERAL_INHIBITION || "7", 10
+  getSettingSync("synapse_lateral_inhibition", "7"), 10
 );
 
 /** Soft cap on active nodes per iteration (prevents explosion). (Default: 20) */
 export const PRISM_SYNAPSE_SOFT_CAP = parseInt(
-  process.env.PRISM_SYNAPSE_SOFT_CAP || "20", 10
+  getSettingSync("synapse_soft_cap", "20"), 10
 );
 
 // ─── v9.0: Affect-Tagged Memory (Valence Engine) ─────────────
@@ -451,16 +393,16 @@ export const PRISM_SYNAPSE_SOFT_CAP = parseInt(
 
 /** Master switch for affect-tagged memory. (Default: true) */
 export const PRISM_VALENCE_ENABLED =
-  (process.env.PRISM_VALENCE_ENABLED ?? "true") !== "false";
+  getSettingSync("valence_enabled", "true") !== "false";
 
 /** Weight of |valence| in hybrid scoring formula. (Default: 0.1) */
 export const PRISM_VALENCE_WEIGHT = parseFloat(
-  process.env.PRISM_VALENCE_WEIGHT || "0.1"
+  getSettingSync("valence_weight", "0.1")
 );
 
 /** Average valence below this threshold triggers a UX warning. (Default: -0.3) */
 export const PRISM_VALENCE_WARNING_THRESHOLD = parseFloat(
-  process.env.PRISM_VALENCE_WARNING_THRESHOLD || "-0.3"
+  getSettingSync("valence_warning_threshold", "-0.3")
 );
 
 // ─── v9.0: Token-Economic RL (Cognitive Budget) ──────────────
@@ -469,14 +411,14 @@ export const PRISM_VALENCE_WARNING_THRESHOLD = parseFloat(
 
 /** Master switch for the cognitive budget system. (Default: true) */
 export const PRISM_COGNITIVE_BUDGET_ENABLED =
-  (process.env.PRISM_COGNITIVE_BUDGET_ENABLED ?? "true") !== "false";
+  getSettingSync("cognitive_budget_enabled", "true") !== "false";
 
 /** Initial budget size per project in tokens. (Default: 2000) */
 export const PRISM_COGNITIVE_BUDGET_SIZE = parseInt(
-  process.env.PRISM_COGNITIVE_BUDGET_SIZE || "2000", 10
+  getSettingSync("cognitive_budget_size", "2000"), 10
 );
 
 /** Master switch for the surprisal gate. (Default: true) */
 export const PRISM_SURPRISAL_GATE_ENABLED =
-  (process.env.PRISM_SURPRISAL_GATE_ENABLED ?? "true") !== "false";
+  getSettingSync("surprisal_gate_enabled", "true") !== "false";
 
