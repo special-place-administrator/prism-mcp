@@ -34,7 +34,7 @@ import { mergeHandoff, dbToHandoffSchema, sanitizeForMerge } from "../utils/crdt
 // containing: strategy, scores, latency breakdown (embedding/storage/total), and metadata.
 // See src/utils/tracing.ts for full type definitions and design decisions.
 import { createMemoryTrace, traceToContentBlock } from "../utils/tracing.js";
-import { GOOGLE_API_KEY, PRISM_USER_ID, PRISM_AUTO_CAPTURE, PRISM_CAPTURE_PORTS } from "../config.js";
+import { PRISM_USER_ID, PRISM_AUTO_CAPTURE, PRISM_CAPTURE_PORTS } from "../config.js";
 import { captureLocalEnvironment } from "../utils/autoCapture.js";
 import { fireCaptionAsync } from "../utils/imageCaptioner.js";
 import {
@@ -333,13 +333,15 @@ export async function sessionSearchMemoryHandler(args: unknown) {
   // Phase 1: Start total latency timer BEFORE any work (embedding + storage)
   const totalStart = performance.now();
 
-  // Step 1: Generate embedding for the search query
-  if (!GOOGLE_API_KEY) {
+  // Step 1: Verify embedding provider is available
+  try {
+    getLLMProvider().generateEmbedding; // provider exists
+  } catch {
     return {
       content: [{
         type: "text",
-        text: `❌ Semantic search requires GOOGLE_API_KEY for embedding generation.\n` +
-          `Set this environment variable and restart the server.\n\n` +
+        text: `❌ No embedding provider configured.\n` +
+          `Set an embedding provider in the Mind Palace dashboard (Settings → AI Providers).\n\n` +
           `💡 As a workaround, try knowledge_search (keyword-based) instead.`,
       }],
       isError: true,
@@ -433,7 +435,7 @@ export async function sessionSearchMemoryHandler(args: unknown) {
           `Tips:\n` +
           `• Lower the similarity_threshold (e.g., 0.5) for broader results\n` +
           `• Try knowledge_search for keyword-based matching\n` +
-          `• Ensure sessions have been saved with embeddings (requires GOOGLE_API_KEY)`,
+          `• Ensure sessions have been saved with embeddings (requires an embedding provider)`,
       }];
 
       // Phase 1: Trace is still valuable on empty results — it proves the search

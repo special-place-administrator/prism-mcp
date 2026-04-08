@@ -108,13 +108,9 @@ export function getLLMProvider(): LLMProvider {
   let embedType = getSettingSync("embedding_provider", "auto");
 
   if (embedType === "auto") {
-    if (process.env.VOYAGE_API_KEY) {
-      // Voyage takes first priority when available — voyage-code-3 strongly
-      // outperforms general embeddings on code contexts.
+    if (getSettingSync("voyage_api_key", "")) {
       embedType = "voyage";
-    } else if (process.env.OLLAMA_HOST || process.env.OLLAMA_BASE_URL) {
-      // Ollama is second priority: fully local, zero-cost, zero-latency.
-      // Activated when OLLAMA_HOST or OLLAMA_BASE_URL env var is set.
+    } else if (getSettingSync("ollama_base_url", "")) {
       embedType = "ollama";
     } else {
       // Anthropic has no embedding API — auto-bridge to Gemini.
@@ -125,9 +121,7 @@ export function getLLMProvider(): LLMProvider {
         console.error(
           "[LLMFactory] text_provider=anthropic with embedding_provider=auto: " +
           "routing embeddings to GeminiAdapter (Anthropic has no native embedding API). " +
-          "For the Anthropic-recommended pairing, set embedding_provider=voyage in the dashboard. " +
-          "For a fully local, zero-cost option, set embedding_provider=ollama " +
-          "(requires 'ollama pull nomic-embed-text')."
+          "Set embedding_provider=voyage or embedding_provider=llamacpp in the dashboard."
         );
       }
     }
@@ -201,4 +195,18 @@ export function _resetLLMProvider(): void {
 
 export function _setLLMProviderForTest(mock: LLMProvider): void {
   providerInstance = mock;
+}
+
+/**
+ * Returns true if an embedding provider is configured and constructible.
+ * Use this instead of checking GOOGLE_API_KEY — the embedding provider
+ * can be llamacpp, voyage, ollama, openai, or gemini.
+ */
+export function isEmbeddingAvailable(): boolean {
+  try {
+    getLLMProvider(); // triggers construction if not cached
+    return true;
+  } catch {
+    return false;
+  }
 }

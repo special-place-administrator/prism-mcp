@@ -26,7 +26,7 @@ import { buildVaultDirectory } from "../utils/vaultExporter.js";
 import { debugLog } from "../utils/logger.js";
 import { getStorage } from "../storage/index.js";
 import { toKeywordArray } from "../utils/keywordExtractor.js";
-import { getLLMProvider } from "../utils/llm/factory.js";
+import { getLLMProvider, isEmbeddingAvailable } from "../utils/llm/factory.js";
 import { getCurrentGitState, getGitDrift } from "../utils/git.js";
 import { getSetting, getAllSettings } from "../storage/configStorage.js";
 import { mergeHandoff, dbToHandoffSchema, sanitizeForMerge } from "../utils/crdtMerge.js";
@@ -39,7 +39,7 @@ import { mergeHandoff, dbToHandoffSchema, sanitizeForMerge } from "../utils/crdt
 // See src/utils/tracing.ts for full type definitions and design decisions.
 import { createMemoryTrace, traceToContentBlock } from "../utils/tracing.js";
 import {
-  GOOGLE_API_KEY, PRISM_USER_ID, PRISM_AUTO_CAPTURE, PRISM_CAPTURE_PORTS,
+  PRISM_USER_ID, PRISM_AUTO_CAPTURE, PRISM_CAPTURE_PORTS,
   PRISM_VALENCE_ENABLED, PRISM_VALENCE_WARNING_THRESHOLD,
   PRISM_COGNITIVE_BUDGET_ENABLED,
 } from "../config.js";
@@ -178,7 +178,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
       // Uses the existing embedding pipeline — generates the embedding
       // early so we can reuse it for the post-save embedding patch.
       let surprisal = 0.5; // Fallback: neutral surprisal
-      if (GOOGLE_API_KEY) {
+      if (isEmbeddingAvailable()) {
         try {
           const embeddingText = [summary, ...(decisions || [])].join("\n");
           queryEmbedding = await getLLMProvider().generateEmbedding(embeddingText);
@@ -232,7 +232,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
   });
 
   // ─── Fire-and-forget embedding generation ───
-  if (GOOGLE_API_KEY && result) {
+  if (isEmbeddingAvailable() && result) {
     const savedEntry = Array.isArray(result) ? result[0] : result;
     const entryId = (savedEntry as any)?.id;
 
@@ -347,7 +347,7 @@ export async function sessionSaveLedgerHandler(args: unknown) {
         (todos?.length ? `TODOs: ${todos.length} items\n` : "") +
         (files_changed?.length ? `Files changed: ${files_changed.length}\n` : "") +
         (decisions?.length ? `Decisions: ${decisions.length}\n` : "") +
-        (GOOGLE_API_KEY ? `📊 Embedding generation queued for semantic search.\n` : "") +
+        (isEmbeddingAvailable() ? `📊 Embedding generation queued for semantic search.\n` : "") +
         (valence !== null ? `🎭 Valence: ${valence.toFixed(2)}\n` : "") +
         repoPathWarning +
         valenceWarning +
@@ -619,7 +619,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
   // merges contradicting facts in the background (~2-3s).
   //
   // TRIGGER CONDITIONS (all must be true):
-  //   1. GOOGLE_API_KEY is configured (Gemini is available)
+  //   1. An embedding provider is configured and available
   //   2. The handoff was an UPDATE (not a brand-new project)
   //   3. key_context was provided (something to merge)
   //
@@ -627,7 +627,7 @@ export async function sessionSaveHandoffHandler(args: unknown, server?: Server) 
   //   If the user saves another handoff while the merger runs,
   //   the merger's save will fail with a version conflict. This is
   //   intentional — active user input always wins over background merging.
-  if (GOOGLE_API_KEY && data.status === "updated" && key_context) {
+  if (isEmbeddingAvailable() && data.status === "updated" && key_context) {
     // Use dynamic import to avoid loading Gemini SDK if not needed
     import("../utils/factMerger.js").then(async ({ consolidateFacts }) => {
       try {
@@ -939,7 +939,7 @@ export async function sessionLoadContextHandler(args: unknown) {
   // ─── SDM Intuitive Recall (v5.5) ───
   // Generate embedding of current context and fetch latent SDM patterns
   let sdmRecallBlock = "";
-  if (level !== "quick" && GOOGLE_API_KEY) {
+  if (level !== "quick") {
     try {
       const activeText = [d.last_summary, d.key_context, ...(d.keywords || [])].filter(Boolean).join(" ");
       if (activeText.length > 10) {
@@ -1458,7 +1458,7 @@ export async function sessionSaveExperienceHandler(args: unknown) {
   });
 
   // Fire-and-forget embedding generation
-  if (GOOGLE_API_KEY && result) {
+  if (isEmbeddingAvailable() && result) {
     const embeddingText = summary;
     const savedEntry = Array.isArray(result) ? result[0] : result;
     const entryId = (savedEntry as any)?.id;
