@@ -1249,7 +1249,7 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
               <option value="gemini">🔵 Gemini (Google)</option>
               <option value="openai">🟢 OpenAI / Ollama</option>
               <option value="anthropic">🟣 Anthropic (Claude)</option>
-              <option value="llamacpp">🦙 Llama.cpp (Bonsai)</option>
+              <option value="llamacpp">🦙 Llama.cpp</option>
             </select>
           </div>
 
@@ -1352,8 +1352,8 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
               <input type="text" id="input-llamacpp-text-model"
                 placeholder="Bonsai-8B"
                 style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 180px;"
-                onchange="saveBootSetting('llamacpp_text_model', this.value)"
-                oninput="clearTimeout(this._ptm); var self=this; this._ptm=setTimeout(function(){saveBootSetting('llamacpp_text_model',self.value)},800)" />
+                onchange="saveBootSetting('llamacpp_text_model', this.value); updateLlamacppLabels(this.value, null)"
+                oninput="clearTimeout(this._ptm); var self=this; this._ptm=setTimeout(function(){saveBootSetting('llamacpp_text_model',self.value); updateLlamacppLabels(self.value, null)},800)" />
             </div>
           </div>
 
@@ -1373,7 +1373,7 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
               <option value="openai">🟢 OpenAI</option>
               <option value="voyage">🔮 Voyage AI</option>
               <option value="ollama">🟠 Ollama (Local)</option>
-              <option value="llamacpp">🦙 Llama.cpp (Bonsai)</option>
+              <option value="llamacpp">🦙 Llama.cpp</option>
             </select>
           </div>
 
@@ -1472,8 +1472,8 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
               <input type="text" id="input-llamacpp-embedding-model"
                 placeholder="nomic-embed-text-v2-moe"
                 style="padding: 0.2rem 0.5rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem; font-family: var(--font-mono); width: 210px;"
-                onchange="saveBootSetting('llamacpp_embedding_model', this.value)"
-                oninput="clearTimeout(this._pem); var self=this; this._pem=setTimeout(function(){saveBootSetting('llamacpp_embedding_model',self.value)},800)" />
+                onchange="saveBootSetting('llamacpp_embedding_model', this.value); updateLlamacppLabels(null, this.value)"
+                oninput="clearTimeout(this._pem); var self=this; this._pem=setTimeout(function(){saveBootSetting('llamacpp_embedding_model',self.value); updateLlamacppLabels(null, self.value)},800)" />
             </div>
           </div>
 
@@ -1541,7 +1541,7 @@ Example:\n## Dev Rules\n- Always write tests first\n- Use TypeScript strict mode
           </div>
 
           <div style="margin-top:1rem;padding:0.6rem 0.8rem;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:6px;font-size:0.78rem;color:var(--text-secondary);line-height:1.5">
-            💡 <strong>Fully local setup:</strong> Text Provider → <code>Llama.cpp (Bonsai)</code>, Embedding Provider → <code>Llama.cpp (Bonsai)</code>.<br>
+            💡 <strong>Fully local setup:</strong> Text Provider → <code>Llama.cpp</code>, Embedding Provider → <code>Llama.cpp</code>.<br>
             Zero API keys, zero cost. Runs on your GPU via Bonsai launcher with <code>nomic-embed-text-v2-moe</code> (768-dim native).
           </div>
 
@@ -3386,6 +3386,28 @@ function handleSkillUpload(input) {
 // text_provider  → governs generateText()  (gemini | openai | anthropic)
 // embedding_provider → governs generateEmbedding() (auto | gemini | openai)
 // Called when the TEXT provider dropdown changes.
+// Update llamacpp dropdown labels with actual model aliases from settings.
+// Called on settings load and when user edits model name fields.
+function updateLlamacppLabels(textModel, embedModel) {
+    var textSel = document.getElementById('select-text-provider');
+    var embedSel = document.getElementById('select-embedding-provider');
+    if (textSel) {
+        for (var i = 0; i < textSel.options.length; i++) {
+            if (textSel.options[i].value === 'llamacpp') {
+                var label = textModel ? '\uD83E\uDD99 Llama.cpp (' + textModel + ')' : '\uD83E\uDD99 Llama.cpp';
+                textSel.options[i].text = label;
+            }
+        }
+    }
+    if (embedSel) {
+        for (var i = 0; i < embedSel.options.length; i++) {
+            if (embedSel.options[i].value === 'llamacpp') {
+                var label = embedModel ? '\uD83E\uDD99 Llama.cpp (' + embedModel + ')' : '\uD83E\uDD99 Llama.cpp';
+                embedSel.options[i].text = label;
+            }
+        }
+    }
+}
 function onTextProviderChange(value) {
     document.getElementById('provider-fields-gemini').style.display = value === 'gemini' ? '' : 'none';
     document.getElementById('provider-fields-openai').style.display = value === 'openai' ? '' : 'none';
@@ -3600,6 +3622,8 @@ function loadAiProviderSettings() {
                     if (lcEu && s.llamacpp_embedding_url) lcEu.value = s.llamacpp_embedding_url;
                     var lcEm = document.getElementById('input-llamacpp-embedding-model');
                     if (lcEm && s.llamacpp_embedding_model) lcEm.value = s.llamacpp_embedding_model;
+                    // Dynamic dropdown labels — show actual model alias
+                    updateLlamacppLabels(s.llamacpp_text_model, s.llamacpp_embedding_model);
                     gKey = document.getElementById('input-google-api-key');
                     if (gKey)
                         gKey.placeholder = s.google_api_key ? '(key saved — paste to update)' : 'AIza…';
