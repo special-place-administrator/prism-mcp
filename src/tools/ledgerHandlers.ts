@@ -245,14 +245,14 @@ export async function sessionSaveLedgerHandler(args: unknown) {
 
       embeddingPromise
         .then(async (embedding) => {
-          // Build atomic patch — float32 + TurboQuant in ONE DB update
+          // Build atomic patch — float32 + RotorQuant in ONE DB update
           const patchData: Record<string, unknown> = {
             embedding: JSON.stringify(embedding),
           };
 
-          // TurboQuant: compress alongside float32 (non-fatal)
+          // RotorQuant: compress alongside float32 (non-fatal)
           try {
-            const { getDefaultCompressor, serialize } = await import("../utils/turboquant.js");
+            const { getDefaultCompressor, serialize } = await import("../utils/rotorquant.js");
             const compressor = getDefaultCompressor();
             const compressed = compressor.compress(embedding);
             const buf = serialize(compressed);
@@ -260,9 +260,9 @@ export async function sessionSaveLedgerHandler(args: unknown) {
             patchData.embedding_compressed = buf.toString("base64");
             patchData.embedding_format = `turbo${compressor.bits}`;
             patchData.embedding_turbo_radius = compressed.radius;
-            debugLog(`[session_save_ledger] TurboQuant compressed: ${buf.length} bytes (${(3072 / buf.length).toFixed(1)}× ratio)`);
+            debugLog(`[session_save_ledger] RotorQuant compressed: ${buf.length} bytes (${(3072 / buf.length).toFixed(1)}× ratio)`);
           } catch (turboErr: any) {
-            console.error(`[session_save_ledger] TurboQuant compression failed (non-fatal): ${turboErr.message}`);
+            console.error(`[session_save_ledger] RotorQuant compression failed (non-fatal): ${turboErr.message}`);
           }
 
           // Single atomic DB update for all embedding data
@@ -1563,7 +1563,7 @@ export async function sessionExportMemoryHandler(args: unknown) {
 
       // Strip raw embedding vectors from the export (large binary / not human-useful)
       // embedding: raw float32 JSON array (~12KB/entry)
-      // embedding_compressed: TurboQuant binary blob (~400B/entry, base64 in JSON)
+      // embedding_compressed: RotorQuant binary blob (~400B/entry, base64 in JSON)
       const cleanLedger = ledger.map(({ embedding: _emb, embedding_compressed: _ec, ...rest }) => rest);
 
       const visualMemory = (ctx?.metadata?.visual_memory as unknown[] | undefined) ?? [];

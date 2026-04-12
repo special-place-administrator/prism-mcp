@@ -1,4 +1,4 @@
-import { TurboQuantCompressor, CompressedEmbedding, PRISM_DEFAULT_CONFIG, getDefaultCompressor } from '../utils/turboquant.js';
+import { RotorQuantCompressor, CompressedEmbedding, PRISM_DEFAULT_CONFIG, getDefaultCompressor } from '../utils/rotorquant.js';
 
 // M = 10,000 hard locations per project
 const SDM_M = 10000;
@@ -79,7 +79,7 @@ export class SparseDistributedMemory {
     }
   }
 
-  /** Convert TurboQuant QJL bytes into Uint32Array for fast bit math */
+  /** Convert RotorQuant QJL bytes into Uint32Array for fast bit math */
   private blobToAddress(blob: CompressedEmbedding): Uint32Array {
     const qjl = blob.qjlSigns; // Uint8Array of length 96 (768 bits)
     const view = new DataView(qjl.buffer, qjl.byteOffset, qjl.byteLength);
@@ -129,7 +129,7 @@ export class SparseDistributedMemory {
   }
 
   /**
-   * Write an HDC binary vector directly into memory (skips TurboQuant logic).
+   * Write an HDC binary vector directly into memory (skips RotorQuant logic).
    * Maps 1 bits to +1 and 0 bits to -1, summing them into the addressed counters.
    * Applies hard clipping per counter entry ensuring bounded dynamics.
    */

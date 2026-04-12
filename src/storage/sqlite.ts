@@ -429,11 +429,11 @@ export class SqliteStorage implements StorageBackend {
       `CREATE INDEX IF NOT EXISTS idx_ledger_importance ON session_ledger(importance DESC)`
     );
 
-    // ─── v5.0 Migration: TurboQuant Compressed Embeddings ─────
+    // ─── v5.0 Migration: RotorQuant Compressed Embeddings ─────
     //
     // REVIEWER NOTE: v5.0 introduces a DUAL-STORAGE strategy for embeddings:
     //   1. `embedding` (F32_BLOB)          — float32 for native vector search (Tier 1)
-    //   2. `embedding_compressed` (TEXT)    — base64 TurboQuant blob for JS fallback (Tier 2)
+    //   2. `embedding_compressed` (TEXT)    — base64 RotorQuant blob for JS fallback (Tier 2)
     //   3. `embedding_format` (TEXT)        — 'turbo3', 'turbo4', or 'float32'
     //   4. `embedding_turbo_radius` (REAL)  — original vector magnitude
     //
@@ -1055,7 +1055,7 @@ export class SqliteStorage implements StorageBackend {
         entry.confidence_score ?? null,   // v4.0: nullable
         entry.importance || 0,            // v4.0: default to 0
         entry.valence ?? null,            // v9.0: affect-tagged memory
-        entry.embedding_compressed || null,        // v5.0: TurboQuant
+        entry.embedding_compressed || null,        // v5.0: RotorQuant
         entry.embedding_format || null,            // v5.0: turbo3/turbo4/float32
         entry.embedding_turbo_radius ?? null,      // v5.0: original vector magnitude
         now,
@@ -1776,7 +1776,7 @@ export class SqliteStorage implements StorageBackend {
 
       return baseResults;
     } catch (err) {
-      // ─── TIER 2 FALLBACK: Asymmetric TurboQuant search in JS ───
+      // ─── TIER 2 FALLBACK: Asymmetric RotorQuant search in JS ───
       //
       // REVIEWER NOTE: THREE-TIER SEARCH ARCHITECTURE
       //
@@ -1785,7 +1785,7 @@ export class SqliteStorage implements StorageBackend {
       //     - FASTEST: O(log n) approximate nearest neighbor
       //     - Requires: libSQL ≥ 0.4.0 with sqlite-vec extension
       //
-      //   Tier 2: TurboQuant asymmetric search in JavaScript
+      //   Tier 2: RotorQuant asymmetric search in JavaScript
       //     - Fetches ALL compressed embeddings, scores each in JS
       //     - Uses asymmetricCosineSimilarity(float32_query, compressed_target)
       //     - O(n) linear scan, but n is typically < 10K entries
@@ -1797,16 +1797,16 @@ export class SqliteStorage implements StorageBackend {
       //
       // WHY JS-SIDE SCORING (not SQLite UDF)?
       //   @libsql/client doesn't support custom user-defined functions.
-      //   The TurboQuant math (matrix multiply, bit unpacking) requires
+      //   The RotorQuant math (matrix multiply, bit unpacking) requires
       //   Float64Array operations that can't be expressed in SQL.
       //   For typical Prism datasets (< 10K entries), linear scan
       //   completes in < 100ms — acceptable for a memory search.
       debugLog(
-        `[SqliteStorage] Tier-1 vector search failed, trying Tier-2 TurboQuant fallback: ${err instanceof Error ? err.message : String(err)}`
+        `[SqliteStorage] Tier-1 vector search failed, trying Tier-2 RotorQuant fallback: ${err instanceof Error ? err.message : String(err)}`
       );
 
       try {
-        const { getDefaultCompressor, deserialize } = await import("../utils/turboquant.js");
+        const { getDefaultCompressor, deserialize } = await import("../utils/rotorquant.js");
         const compressor = getDefaultCompressor();
 
         // Parse query embedding from JSON string
@@ -1877,7 +1877,7 @@ export class SqliteStorage implements StorageBackend {
         
         const baseResults = scored.slice(0, params.limit);
         debugLog(
-          `[SqliteStorage] Tier-2 TurboQuant fallback: scored ${fallbackResult.rows.length} entries, ` +
+          `[SqliteStorage] Tier-2 RotorQuant fallback: scored ${fallbackResult.rows.length} entries, ` +
           `${scored.length} above threshold`
         );
 
@@ -2797,9 +2797,9 @@ export class SqliteStorage implements StorageBackend {
   //
   // WHAT THIS DOES:
   //   NULLs out bulky float32 `embedding` columns (3KB each) for entries
-  //   that already have TurboQuant `embedding_compressed` blobs (~400B each).
+  //   that already have RotorQuant `embedding_compressed` blobs (~400B each).
   //   This reclaims ~90% of vector storage while maintaining Tier-2 search
-  //   accuracy at 95%+ via asymmetric TurboQuant cosine estimation.
+  //   accuracy at 95%+ via asymmetric RotorQuant cosine estimation.
   //
   // WHY IT'S SAFE:
   //   1. Only purges entries where embedding_compressed IS NOT NULL (guard clause)
@@ -2818,7 +2818,7 @@ export class SqliteStorage implements StorageBackend {
   // AFTER PURGE:
   //   - Tier-1 (sqlite-vec DiskANN): entries without float32 are invisible
   //     to native vector search — this is expected and harmless
-  //   - Tier-2 (TurboQuant JS-side): unaffected — uses embedding_compressed
+  //   - Tier-2 (RotorQuant JS-side): unaffected — uses embedding_compressed
   //   - Tier-3 (FTS5 keyword): unaffected — uses text columns
   //
   // REVIEWER NOTE: We intentionally do NOT run VACUUM after purge.
@@ -2850,7 +2850,7 @@ export class SqliteStorage implements StorageBackend {
     // array are kept in sync — condition[i] uses args[i] as its parameter.
     const conditions = [
       "embedding IS NOT NULL",           // only entries that actually have float32 vectors
-      "embedding_compressed IS NOT NULL", // CRITICAL: only entries that have a TurboQuant fallback
+      "embedding_compressed IS NOT NULL", // CRITICAL: only entries that have a RotorQuant fallback
       "deleted_at IS NULL",              // skip tombstoned entries
       `created_at < datetime('now', ?)`, // age filter using SQLite datetime modifier
     ];

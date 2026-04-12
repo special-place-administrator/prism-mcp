@@ -1177,7 +1177,7 @@ export function isKnowledgeSyncRulesArgs(
 // ─── v5.1: Deep Storage Mode (The Purge) ──────────────────────
 //
 // REVIEWER NOTE: This tool is the storage optimization follow-up to v5.0's
-// TurboQuant integration. Now that compressed blobs provide Tier-2 search,
+// RotorQuant integration. Now that compressed blobs provide Tier-2 search,
 // the original float32 embeddings (3KB each) for OLD entries are redundant.
 //
 // DESIGN DECISIONS:
@@ -1195,14 +1195,14 @@ export const DEEP_STORAGE_PURGE_TOOL: Tool = {
   name: "deep_storage_purge",
   description:
     "v5.1 Deep Storage Mode: Purge high-precision float32 embedding vectors for entries " +
-    "that already have TurboQuant compressed blobs, reclaiming ~90% of vector storage. " +
+    "that already have RotorQuant compressed blobs, reclaiming ~90% of vector storage. " +
     "Only affects entries older than the specified threshold (default: 30 days, minimum: 7). " +
     "Entries without compressed blobs are NEVER touched. " +
     "Use dry_run=true to preview the impact before executing.\n\n" +
-    "**When to use:** After running TurboQuant backfill (session_backfill_embeddings), " +
+    "**When to use:** After running RotorQuant backfill (session_backfill_embeddings), " +
     "call this tool to reclaim disk space from legacy float32 vectors that are no longer " +
     "needed for search.\n\n" +
-    "**Safety:** Tier-2 search (TurboQuant) maintains 95%+ accuracy with compressed blobs. " +
+    "**Safety:** Tier-2 search (RotorQuant) maintains 95%+ accuracy with compressed blobs. " +
     "Tier-3 (FTS5 keyword) search is completely unaffected.",
   inputSchema: {
     type: "object",

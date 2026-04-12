@@ -50,7 +50,7 @@ export interface LedgerEntry {
   // Embedding (generated async after save via Gemini text-embedding-004)
   embedding?: string; // JSON-stringified number[] — 768-dim float32 vector
 
-  // ─── v5.0: TurboQuant Compressed Embedding ──────────────────
+  // ─── v5.0: RotorQuant Compressed Embedding ──────────────────
   //
   // REVIEWER NOTE: These fields implement DUAL-STORAGE for embeddings.
   // Both float32 (`embedding`) and compressed (`embedding_compressed`)
@@ -59,13 +59,13 @@ export interface LedgerEntry {
   //   Tier 2: JS-side asymmetric search on compressed blobs (fallback)
   //   Tier 3: FTS5 text search via `searchKnowledge` (last resort)
   //
-  // The compressed format uses TurboQuant (Google, ICLR 2026):
+  // The compressed format uses RotorQuant (Givens rotation variant):
   //   - Lloyd-Max MSE quantization + QJL residual correction
   //   - 768 floats (3,072 bytes) → ~400 bytes (base64: ~535 chars)
   //   - Asymmetric search: query stays float32, targets are compressed
-  //   - See: src/utils/turboquant.ts for the math core
+  //   - See: src/utils/rotorquant.ts for the math core
   //
-  embedding_compressed?: string;           // base64-encoded TurboQuant blob (~535 chars → ~400 bytes decoded)
+  embedding_compressed?: string;           // base64-encoded RotorQuant blob (~535 chars → ~400 bytes decoded)
   embedding_format?: 'turbo3' | 'turbo4' | 'float32';  // quantization bits: turbo3 = 304 bytes, turbo4 = 400 bytes
   embedding_turbo_radius?: number;         // original vector L2 norm — needed for cosine sim reconstruction
 
@@ -613,7 +613,7 @@ export interface StorageBackend {
 
   // ─── v5.1: Deep Storage Mode ("The Purge") ────────────────────
   //
-  // CONTEXT: v5.0 introduced TurboQuant, which stores a compressed 400-byte
+  // CONTEXT: v5.0 introduced RotorQuant, which stores a compressed 400-byte
   // representation (embedding_compressed) alongside the original 3KB float32
   // embedding. Once entries have compressed blobs AND are old enough, the
   // float32 column is pure redundancy — Tier-2 search uses compressed blobs

@@ -203,7 +203,7 @@ export async function backfillEmbeddingsHandler(args: unknown) {
           };
 
           try {
-            const { getDefaultCompressor, serialize } = await import("../utils/turboquant.js");
+            const { getDefaultCompressor, serialize } = await import("../utils/rotorquant.js");
             const compressor = getDefaultCompressor();
             const compressed = compressor.compress(embedding);
             const buf = serialize(compressed);
@@ -212,7 +212,7 @@ export async function backfillEmbeddingsHandler(args: unknown) {
             patchData.embedding_format = `turbo${compressor.bits}`;
             patchData.embedding_turbo_radius = compressed.radius;
           } catch (turboErr: any) {
-            debugLog(`[backfill] TurboQuant compression failed for ${entry.id} (non-fatal): ${turboErr.message}`);
+            debugLog(`[backfill] RotorQuant compression failed for ${entry.id} (non-fatal): ${turboErr.message}`);
           }
 
           await storage.patchLedger(entry.id, patchData);
@@ -557,7 +557,7 @@ export async function deepStoragePurgeHandler(args: unknown) {
         `Reclaimed space: **${result.reclaimedBytes.toLocaleString()} bytes** (~${mbs} MB)\n\n` +
         (args.project ? `Project: \`${args.project}\`\n` : `Scope: all projects\n`) +
         `Age threshold: entries older than ${olderThanDays} days\n\n` +
-        `💡 Tier-2 (TurboQuant) and Tier-3 (FTS5) search remain fully functional.\n` +
+        `💡 Tier-2 (RotorQuant) and Tier-3 (FTS5) search remain fully functional.\n` +
         `Tier-1 (native sqlite-vec) search will skip these entries — this is expected.` +
         (result.purged >= 1000
           ? `\n\n💡 **Recommendation:** ${result.purged.toLocaleString()} entries were purged. ` +

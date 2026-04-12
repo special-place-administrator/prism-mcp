@@ -1,5 +1,5 @@
 import { getStorage } from "../storage/index.js";
-import { getDefaultCompressor, deserialize, CompressedEmbedding } from "../utils/turboquant.js";
+import { getDefaultCompressor, deserialize, CompressedEmbedding } from "../utils/rotorquant.js";
 import { debugLog } from "../utils/logger.js";
 
 export interface SdmRecallMatch {
@@ -10,7 +10,7 @@ export interface SdmRecallMatch {
 }
 
 /**
- * Perform a fast JS-space Hamming distance scan across TurboQuant compressed embeddings.
+ * Perform a fast JS-space Hamming distance scan across RotorQuant compressed embeddings.
  * Used exclusively for decoding SDM superposed target vectors back into ledger entries.
  *
  * PLATFORM CONSTRAINT: Both sdmEngine.ts (DataView LE) and this decoder (TypedArray views)
@@ -33,7 +33,7 @@ export async function decodeSdmVector(
     return [];
   }
 
-  // 2. Compress the target Float32Array into a 96-byte Uint8Array using TurboQuant
+  // 2. Compress the target Float32Array into a 96-byte Uint8Array using RotorQuant
   const compressor = getDefaultCompressor();
   // compressor.compress takes number[] — copy via for-loop to avoid Array.from GC pressure
   const queryArray: number[] = new Array(targetVector.length);

@@ -113,7 +113,7 @@ export const MIGRATIONS: Migration[] = [
     version: 29,
     name: "turboquant_compressed_embeddings",
     sql: `
-      -- v5.0: TurboQuant Compressed Embedding columns
+      -- v5.0: RotorQuant Compressed Embedding columns
       ALTER TABLE session_ledger ADD COLUMN IF NOT EXISTS embedding_compressed TEXT DEFAULT NULL;
       ALTER TABLE session_ledger ADD COLUMN IF NOT EXISTS embedding_format TEXT DEFAULT NULL;
       ALTER TABLE session_ledger ADD COLUMN IF NOT EXISTS embedding_turbo_radius REAL DEFAULT NULL;
@@ -124,7 +124,7 @@ export const MIGRATIONS: Migration[] = [
     //
     // REVIEWER NOTE: This creates a Postgres function that NULLs out
     // the float32 `embedding` column for entries that already have
-    // TurboQuant `embedding_compressed` blobs. This is the Supabase
+    // RotorQuant `embedding_compressed` blobs. This is the Supabase
     // counterpart to SqliteStorage.purgeHighPrecisionEmbeddings().
     //
     // The function enforces the same safety guards as the SQLite impl:

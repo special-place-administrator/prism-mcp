@@ -101,7 +101,7 @@ export class SupabaseStorage implements StorageBackend {
       event_type: entry.event_type || "session",
       ...(entry.confidence_score !== undefined && { confidence_score: entry.confidence_score }),
       importance: entry.importance || 0,
-      // v5.0: TurboQuant Compressed Embedding fields
+      // v5.0: RotorQuant Compressed Embedding fields
       ...(entry.embedding_compressed !== undefined && { embedding_compressed: entry.embedding_compressed }),
       ...(entry.embedding_format !== undefined && { embedding_format: entry.embedding_format }),
       ...(entry.embedding_turbo_radius !== undefined && { embedding_turbo_radius: entry.embedding_turbo_radius }),
@@ -379,7 +379,7 @@ export class SupabaseStorage implements StorageBackend {
     //     - Falls through when: RPC doesn't exist, plan doesn't include pgvector,
     //       or JWT doesn't have EXECUTE on the function
     //
-    //   Tier 2: TurboQuant asymmetric search in JavaScript (mirrors SQLite)
+    //   Tier 2: RotorQuant asymmetric search in JavaScript (mirrors SQLite)
     //     - Fetches all embedding_compressed blobs via REST, scores in JS
     //     - O(N) linear scan — acceptable for typical Prism dataset (<10K entries)
     //     - Activated when: Tier 1 throws any error
@@ -401,20 +401,20 @@ export class SupabaseStorage implements StorageBackend {
       }
       return baseResults;
     } catch (tier1Err) {
-      // ─── TIER 2 FALLBACK: TurboQuant JS-side scoring ─────────────────
+      // ─── TIER 2 FALLBACK: RotorQuant JS-side scoring ─────────────────
       debugLog(
-        `[SupabaseStorage] Tier-1 RPC failed, trying Tier-2 TurboQuant fallback: ` +
+        `[SupabaseStorage] Tier-1 RPC failed, trying Tier-2 RotorQuant fallback: ` +
         `${tier1Err instanceof Error ? tier1Err.message : String(tier1Err)}`
       );
 
       try {
-        const { getDefaultCompressor, deserialize } = await import("../utils/turboquant.js");
+        const { getDefaultCompressor, deserialize } = await import("../utils/rotorquant.js");
         const compressor = getDefaultCompressor();
 
         // Parse the float32 query vector from the JSON string
         const queryVec: number[] = JSON.parse(params.queryEmbedding);
 
-        // Fetch all entries that have TurboQuant compressed embeddings
+        // Fetch all entries that have RotorQuant compressed embeddings
         const queryParams: Record<string, string> = {
           user_id: `eq.${params.userId}`,
           archived_at: "is.null",
@@ -454,7 +454,7 @@ export class SupabaseStorage implements StorageBackend {
 
         scored.sort((a, b) => b.similarity - a.similarity);
         debugLog(
-          `[SupabaseStorage] Tier-2 TurboQuant fallback: scored ${rows.length} entries, ` +
+          `[SupabaseStorage] Tier-2 RotorQuant fallback: scored ${rows.length} entries, ` +
           `${scored.length} above threshold`
         );
         const tier2Results = scored.slice(0, params.limit);
