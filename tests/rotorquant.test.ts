@@ -119,7 +119,7 @@ describe("Compress/Decompress Roundtrip", () => {
     }
   });
 
-  it("self-similarity > 0.90 at 3-bit config", () => {
+  it("self-similarity > 0.95 at 3-bit config", () => {
     const compressor = new RotorQuantCompressor(FAST_3BIT_CONFIG);
     const rng = mulberry32(42);
 
@@ -127,7 +127,7 @@ describe("Compress/Decompress Roundtrip", () => {
       const v = randomUnitVector(128, rng);
       const compressed = compressor.compress(v);
       const selfSim = compressor.asymmetricCosineSimilarity(v, compressed);
-      expect(selfSim).toBeGreaterThan(0.90);
+      expect(selfSim).toBeGreaterThan(0.95);
     }
   });
 });

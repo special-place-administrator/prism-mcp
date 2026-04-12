@@ -30,8 +30,8 @@ export interface RotorQuantConfig {
   d: number;
   /** Total bits per coordinate: MSE uses (bits-1), QJL uses 1 bit. Min: 2 */
   bits: number;
-  /** Random seed for reproducibility */
-  seed: number;
+  /** Random seed for reproducibility (default: 42) */
+  seed?: number;
 }
 
 export interface CompressedEmbedding {
@@ -374,11 +374,12 @@ export class RotorQuantCompressor {
     this.mseBits = Math.max(config.bits - 1, 1);
     this.codebook = getCodebook(config.d, this.mseBits);
 
-    const givens = generateGivensRotations(config.d, config.seed);
+    const seed = config.seed ?? 42;
+    const givens = generateGivensRotations(config.d, seed);
     this.cos = givens.cos;
     this.sin = givens.sin;
 
-    this.S = generateQJLMatrix(config.d, config.seed + 1);
+    this.S = generateQJLMatrix(config.d, seed + 1);
   }
 
   /**
