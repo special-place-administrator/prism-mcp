@@ -1,4 +1,4 @@
-# RFC-001: Quantized Agentic Memory (TurboQuant Integration)
+# RFC-001: Quantized Agentic Memory (RotorQuant Integration)
 
 **Status:** In Progress (Phases 1-3 Complete — Math Core, Storage Schema, Two-Tier Search)  
 **Author(s):** Prism Core Team  
@@ -9,7 +9,7 @@
 
 ## Summary
 
-Integrate Google's [TurboQuant](https://arxiv.org/abs/2504.19874) (ICLR 2026) vector quantization into Prism's embedding storage pipeline, compressing 768-dim `float32` embeddings (~3,072 bytes) to 3-bit quantized blobs (~288 bytes) — a **~10× storage reduction** with zero accuracy loss. This enables local-first users to maintain years of session history with negligible disk overhead.
+Integrate [RotorQuant](https://arxiv.org/abs/2504.19874) (PlanarQuant variant) vector quantization into Prism's embedding storage pipeline, compressing 768-dim `float32` embeddings (~3,072 bytes) to 3-bit quantized blobs (~288 bytes) — a **~10× storage reduction** with zero accuracy loss. This enables local-first users to maintain years of session history with negligible disk overhead.
 
 This is a capability **no other MCP server has**: Quantized Agentic Memory.
 
@@ -17,7 +17,7 @@ This is a capability **no other MCP server has**: Quantized Agentic Memory.
 
 Prism's semantic search stores 768-dim `float32` embeddings for every ledger entry. At scale:
 
-| Entries | Current (float32) | With TurboQuant (turbo3) |
+| Entries | Current (float32) | With RotorQuant (turbo3) |
 |---|---|---|
 | 1,000 | ~3 MB | ~300 KB |
 | 10,000 | ~30 MB | ~3 MB |
@@ -27,13 +27,13 @@ For a local-first tool promising years of persistent memory, 10× compression is
 
 ## Design
 
-### TurboQuant Pipeline (Two Stages)
+### RotorQuant Pipeline (Two Stages)
 
 ```
 Input: float32[768] embedding
   │
   ├─ Stage 1: PolarQuant ──────────────────────────────────
-  │   1. Apply Fast Walsh-Hadamard Transform (FWHT)  ← O(d log d)
+  │   1. Apply Givens 2D block-diagonal rotation  ← O(d log d)
   │   2. Convert to polar coordinates (radius + angles)
   │   3. Apply Lloyd-Max optimal scalar quantizer to angles
   │   → Output: quantized angles (majority of bits) + radius (1x float32)
@@ -46,9 +46,9 @@ Input: float32[768] embedding
 Result: ~288-byte compressed blob + 4-byte radius float
 ```
 
-#### Critical Implementation Detail: FWHT
+#### Critical Implementation Detail: Givens Rotations
 
-The "random rotation" in PolarQuant uses a **Fast Walsh-Hadamard Transform** — not a generic random matrix. This runs in O(d log d) instead of O(d²), making it fast enough for the Node.js event loop without blocking. Zero-dependency JS implementations exist and port trivially to TypeScript.
+The "random rotation" in PolarQuant uses a **Givens 2D block-diagonal rotation** — not a generic random matrix. This runs in O(d log d) instead of O(d²), making it fast enough for the Node.js event loop without blocking. Zero-dependency JS implementations exist and port trivially to TypeScript.
 
 ### Two-Tier Search Architecture
 
@@ -61,7 +61,7 @@ searchMemory(query) →
   │
   └─ Tier 2: Asymmetric Similarity (in JS)
      → query as float32 vs stored turbo3 blobs
-     → Rank by TurboQuant's asymmetric attention score
+     → Rank by RotorQuant's asymmetric attention score
      → Return top-K results
 ```
 
@@ -81,11 +81,11 @@ Storing the radius separately (4-byte float) enables fast asymmetric scoring wit
 
 ### New Module
 
-#### `src/utils/turboquant.ts`
+#### `src/utils/rotorquant.ts`
 Pure TypeScript implementation:
 - `compress(embedding: number[]): { blob: Buffer; radius: number }`
 - `asymmetricSimilarity(query: number[], blob: Buffer, radius: number): number`
-- Internal: `fwht()`, `polarQuantize()`, `qjlCorrect()`
+- Internal: `givensRotate()`, `polarQuantize()`, `qjlCorrect()`
 
 ## Verification Plan
 
@@ -94,7 +94,7 @@ Use Prism's existing 185-test suite plus:
 ```typescript
 // Core invariant: compressed similarity must be near-identical to float32
 const emb = await llm.generateEmbedding("test text");
-const compressed = turboCompress(emb);
+const compressed = rotorCompress(emb);
 const score = asymmetricSimilarity(emb, compressed);
 assert(score > 0.99, "Compression must preserve >99% similarity");
 ```
@@ -110,7 +110,7 @@ assert(score > 0.99, "Compression must preserve >99% similarity");
 | Phase | Scope | Status |
 |---|---|---|
 | **0 — Docs** | Document `OLLAMA_KV_CACHE_TYPE=turbo3` in README | ✅ Complete |
-| **1 — Math Core** | `src/utils/turboquant.ts` — QR + Lloyd-Max + QJL + bit-packing | ✅ Complete |
+| **1 — Math Core** | `src/utils/rotorquant.ts` — QR + Lloyd-Max + QJL + bit-packing | ✅ Complete |
 | **2 — Storage** | `embedding_compressed` + `embedding_format` + `embedding_turbo_radius` | ✅ Complete |
 | **3 — Search** | Two-Tier search with Tier-2 JS-land asymmetric fallback | ✅ Complete |
 
@@ -136,8 +136,8 @@ a graph-based navigation UI becomes essential for exploring dense session histor
 
 ## References
 
-- [TurboQuant paper (ICLR 2026)](https://arxiv.org/abs/2504.19874)
+- [RotorQuant (PlanarQuant variant)](https://arxiv.org/abs/2504.19874)
 - [QJL (AAAI 2025)](https://arxiv.org/abs/2406.03482)
 - [PolarQuant (AISTATS 2026)](https://arxiv.org/abs/2502.02617)
-- [tonbistudio/turboquant-pytorch](https://github.com/tonbistudio/turboquant-pytorch) — community PyTorch reference
+- [tonbistudio/rotorquant-pytorch](https://github.com/tonbistudio/turboquant-pytorch) — community PyTorch reference
 - [llama.cpp turbo3/turbo4 support](https://github.com/ggerganov/llama.cpp) — `--cache-type-k turbo3`

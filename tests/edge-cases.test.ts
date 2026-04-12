@@ -23,7 +23,7 @@
  *      - Settings pipe-escaping in Settings.md
  *      - Missing prism_export envelope → throws with clear message
  *
- *   3. TurboQuant Guards (turboquant.ts)
+ *   3. RotorQuant Guards (rotorquant.ts)
  *      - bits < 2 → throws
  *      - bits > 6 → throws
  *      - bits = 2 accepted (minimum boundary)
@@ -46,7 +46,7 @@ import {
   type HandoffSchema,
 } from "../src/utils/crdtMerge.js";
 import { buildVaultDirectory } from "../src/utils/vaultExporter.js";
-import { TurboQuantCompressor } from "../src/utils/turboquant.js";
+import { RotorQuantCompressor } from "../src/utils/rotorquant.js";
 import { deepStoragePurgeHandler } from "../src/tools/hygieneHandlers.js";
 import { createTestDb } from "./helpers/fixtures.js";
 
@@ -416,7 +416,7 @@ describe("CRDT — dbToHandoffSchema(): DB row → HandoffSchema normalisation",
 describe("Vault exporter — binary field strip (embedding + embedding_compressed)", () => {
   /**
    * WHY: v6.1 hardening requires that BOTH `embedding` (raw float32 blob)
-   * and `embedding_compressed` (TurboQuant binary blob) are stripped from
+   * and `embedding_compressed` (RotorQuant binary blob) are stripped from
    * vault exports. Leaking either would corrupt Obsidian Wikilinks files
    * with ~400-3072 bytes of raw binary per entry.
    *
@@ -435,7 +435,7 @@ describe("Vault exporter — binary field strip (embedding + embedding_compresse
             importance: 5,
             created_at: "2026-03-30T10:00:00.000Z",
             embedding: new Array(768).fill(0.1),            // raw float32 array
-            embedding_compressed: "dHVyYm9xdWFudA==",       // base64 TurboQuant blob
+            embedding_compressed: "dHVyYm9xdWFudA==",       // base64 RotorQuant blob
             ...overrides,
           },
         ],
@@ -786,13 +786,13 @@ describe("Vault exporter — missing envelope guard", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// GROUP 11: TURBOQUANT — bits RANGE GUARD [2, 6]
+// GROUP 11: ROTORQUANT — bits RANGE GUARD [2, 6]
 // ═══════════════════════════════════════════════════════════════════
 
-describe("TurboQuant — bits range guard [2, 6]", () => {
+describe("RotorQuant — bits range guard [2, 6]", () => {
   /**
    * WHY: The v6.1.4 release notes mention that a bits range guard [2,6]
-   * was added to TurboQuantCompressor. These tests verify:
+   * was added to RotorQuantCompressor. These tests verify:
    *   - bits < 2 throws at construction time
    *   - bits > 6 throws at construction time
    *   - bits = 2 (minimum) is accepted
@@ -808,23 +808,23 @@ describe("TurboQuant — bits range guard [2, 6]", () => {
   const D = 16; // small dimension for fast tests
 
   it("bits = 1 → throws (below minimum)", () => {
-    expect(() => new TurboQuantCompressor({ d: D, bits: 1, seed: 0 })).toThrow();
+    expect(() => new RotorQuantCompressor({ d: D, bits: 1, seed: 0 })).toThrow();
   });
 
   it("bits = 7 → throws (above maximum)", () => {
-    expect(() => new TurboQuantCompressor({ d: D, bits: 7, seed: 0 })).toThrow();
+    expect(() => new RotorQuantCompressor({ d: D, bits: 7, seed: 0 })).toThrow();
   });
 
   it("bits = 2 → accepted (minimum boundary)", () => {
-    expect(() => new TurboQuantCompressor({ d: D, bits: 2, seed: 0 })).not.toThrow();
+    expect(() => new RotorQuantCompressor({ d: D, bits: 2, seed: 0 })).not.toThrow();
   });
 
   it("bits = 6 → accepted (maximum boundary)", () => {
-    expect(() => new TurboQuantCompressor({ d: D, bits: 6, seed: 0 })).not.toThrow();
+    expect(() => new RotorQuantCompressor({ d: D, bits: 6, seed: 0 })).not.toThrow();
   });
 
   it("bits = 4 → accepted (canonical production value)", () => {
-    expect(() => new TurboQuantCompressor({ d: D, bits: 4, seed: 0 })).not.toThrow();
+    expect(() => new RotorQuantCompressor({ d: D, bits: 4, seed: 0 })).not.toThrow();
   });
 });
 
