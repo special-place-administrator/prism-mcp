@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **RotorQuant replaces TurboQuant** — Embedding compression now uses PlanarQuant (Givens 2D rotation) instead of Walsh-Hadamard Transform. 10x smaller rotation parameters (128 floats vs 16,384). Same compression ratio and accuracy guarantees.
+- All `TurboQuantCompressor` references renamed to `RotorQuantCompressor`
+- RFC-001 renamed from `turboquant-integration` to `rotorquant-integration`
+
 ## [9.0.0] - 2026-04-07 — Autonomous Cognitive OS
 
 ### 🧠 Affect-Tagged Memory (Valence Engine)

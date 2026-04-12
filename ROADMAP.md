@@ -268,7 +268,7 @@ With v8.0.3 shipped, Prism is a **production-hardened, fail-closed, adversariall
 - **Diagnostically Rich** — `verify status --json` emits `diff_counts` + `changed_keys` per layer. JSON contract is CI-enforced and schema-versioned.
 - **Zero Cold-Start** — Universal Migration imports years of Claude/Gemini/ChatGPT history on day one. New memories are access-seeded immediately.
 - **Air-Gapped Capable** — OllamaAdapter enables fully local, zero-cost embeddings via `nomic-embed-text` (768-dim native). No API key, no network, no cost. Auto-detected when `OLLAMA_HOST` is set.
-- **Scale** — TurboQuant 10× compression + Deep Storage Purge + SQLite VACUUM. Decades of session history on a laptop.
+- **Scale** — RotorQuant 10× compression + Deep Storage Purge + SQLite VACUUM. Decades of session history on a laptop.
 - **Safe** — Full type-guard matrix across all 30+ MCP tools. Path traversal, poison pill payloads, null-byte injection — all blocked at the gate layer before any execution.
 - **Convergent** — CRDT OR-Map handoff merging. Multiple agents, zero conflicts.
 - **Autonomous** — Web Scholar researches while you sleep. Dark Factory executes while you sleep. Task Router delegates while you sleep. Adversarial Evaluator keeps the output honest.

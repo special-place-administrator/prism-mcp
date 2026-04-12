@@ -17,7 +17,7 @@ npx vitest
 npx vitest run edge-cases
 npx vitest run vaultExporter
 npx vitest run sessionExportMemory
-npx vitest run turboquant
+npx vitest run rotorquant
 
 # TypeScript typecheck (no emit)
 npx tsc --noEmit
@@ -29,7 +29,7 @@ npx tsc --noEmit
 
 ```
 tests/
-├── edge-cases.test.ts               # 46 tests — gap matrix (CRDT, vault, TurboQuant, SQLite)
+├── edge-cases.test.ts               # 46 tests — gap matrix (CRDT, vault, RotorQuant, SQLite)
 ├── tools/                           # MCP tool handler tests
 │   ├── sessionExportMemory.test.ts  # 14 groups, ~85 tests — export pipeline
 │   ├── definitions.test.ts          # Tool schema & arg validation
@@ -38,7 +38,7 @@ tests/
 ├── storage/
 │   ├── sqlite.test.ts               # SQLite backend — CRUD, FTS5, migrations
 │   └── isolation.test.ts            # Multi-tenant data isolation
-├── turboquant.test.ts               # TurboQuant math & compression tests
+├── rotorquant.test.ts               # RotorQuant math & compression tests
 ├── deep-storage.test.ts             # Deep storage purge + VACUUM
 ├── migration.test.ts                # Schema migration paths
 ├── migration-edge.test.ts           # Edge cases: partial migrations, column adds
@@ -73,7 +73,7 @@ The **gap matrix** file: 46 tests across 12 groups, closing failure modes NOT ex
 | 8 | Vault — Handoff.md | Always present, populated from handoff fields, no `undefined`/`null` leak |
 | 9 | Vault — Settings.md | Pipe `\|` → `\\|` escaping in table values |
 | 10 | Vault — envelope guard | Missing `prism_export` throws, `null as any` throws, `undefined as any` throws |
-| 11 | TurboQuant — bits guard | bits=1 throws, bits=7 throws, bits=2/4/6 accepted |
+| 11 | RotorQuant — bits guard | bits=1 throws, bits=7 throws, bits=2/4/6 accepted |
 | 12 | Deep Storage — handler TTL | `older_than_days=0` → `isError=false` (no-op sentinel), dry-run variant, omit→default 30 |
 
 ### `tests/tools/sessionExportMemory.test.ts`
@@ -103,8 +103,8 @@ Unit tests for the `buildVaultDirectory` function:
 - Visual memory: `filename`/`timestamp` keys correctly rendered
 - Keyword backlink: vault-relative path (no `../` prefix) for Obsidian compatibility
 
-### `tests/turboquant.test.ts`
-Mathematical correctness for TurboQuant compression:
+### `tests/rotorquant.test.ts`
+Mathematical correctness for RotorQuant compression:
 - **Similarity Preservation** — Pearson correlation >0.85 at 4-bit, >0.75 at 3-bit
 - **QJL Zero-Bias** — mean estimator bias <0.05 across 200 random pairs
 - **Compression Ratio** — 4-bit d=768 serializes to <500 bytes (vs. 3,072 float32)
@@ -155,7 +155,7 @@ As of v6.1.4, `getLedgerEntries` in the export handler uses PostgREST-style filt
 Tests that verify the call shape must use this format. The `eq.` prefix is stripped by the SQLite adapter's `parsePostgRESTFilters()`.
 
 ### 4. Embedding Fields Must Be Absent in Exports
-Both `embedding` (raw float32) and `embedding_compressed` (TurboQuant Uint8Array) are stripped before export. Tests verify:
+Both `embedding` (raw float32) and `embedding_compressed` (RotorQuant Uint8Array) are stripped before export. Tests verify:
 ```ts
 expect(prism_export.ledger[0]).not.toHaveProperty("embedding");
 expect(prism_export.ledger[0]).not.toHaveProperty("embedding_compressed");
@@ -198,7 +198,7 @@ expect(() => buildVaultDirectory(null as any)).toThrow();
 |------|--------|-------|
 | `sessionExportMemory` handler | ✅ Comprehensive (14 groups) | |
 | `vaultExporter.ts` | ✅ Unit + edge cases | `edge-cases.test.ts` Groups 4–10 |
-| `turboquant.ts` | ✅ Math + production scale + bounds | `edge-cases.test.ts` Group 11 |
+| `rotorquant.ts` | ✅ Math + production scale + bounds | `edge-cases.test.ts` Group 11 |
 | `crdtMerge.ts` | ✅ Full CRDT semantics | `edge-cases.test.ts` Groups 1–3 |
 | `hygieneHandlers.ts` — purge | ✅ TTL=0 guard + real-SQLite | `edge-cases.test.ts` Group 12 |
 | `deep-storage.ts` storage layer | ✅ Comprehensive (4 describe groups) | |

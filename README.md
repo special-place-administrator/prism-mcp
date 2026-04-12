@@ -446,7 +446,7 @@ A gorgeous glassmorphism UI at `localhost:3000` that lets you see exactly what y
 
 
 ### 🧬 10× Memory Compression
-Powered by a pure TypeScript port of Google's TurboQuant (inspired by Google's ICLR research), Prism compresses 768-dim embeddings from **3,072 bytes → ~400 bytes** — enabling decades of session history on a standard laptop. No native modules. No vector database required.
+Powered by a pure TypeScript port of RotorQuant (PlanarQuant variant — Givens 2D rotation instead of WHT), Prism compresses 768-dim embeddings from **3,072 bytes → ~400 bytes** — enabling decades of session history on a standard laptop. No native modules. No vector database required.
 
 ### 🐝 Multi-Agent Hivemind
 Multiple agents (dev, QA, PM) can work on the same project with **role-isolated memory**. Agents discover each other automatically, share context in real-time via Telepathy sync, and see a team roster during context loading. → [Multi-agent setup example](examples/multi-agent-hivemind/)
@@ -809,7 +809,7 @@ Standard memory servers (like Mem0, Zep, or the baseline Anthropic MCP) act as p
 | **Context Assembly** | **Progressive (Quick/Std/Deep)** | Top-K Semantic Search | Top-K + Temporal Summaries | Basic Entity Search |
 | **Memory Mechanics** | **ACT-R Activation, Spreading Activation, Hebbian Consolidation, Rejection Gate** | Basic Vector + Entity | Fading Temporal Graph | None (Infinite growth) |
 | **Multi-Agent Sync** | **CRDT (Add-Wins / LWW)** | Cloud locks | Postgres locks | ❌ None (Data races) |
-| **Data Compression** | **TurboQuant (7x smaller vectors)** | ❌ Standard F32 Vectors | ❌ Standard Vectors | ❌ No Vectors |
+| **Data Compression** | **RotorQuant (7x smaller vectors)** | ❌ Standard F32 Vectors | ❌ Standard Vectors | ❌ No Vectors |
 | **Observability** | **OTel Traces + Built-in PWA UI** | Cloud Dashboard | Cloud Dashboard | ❌ None |
 | **Maintenance** | **Autonomous Background Scheduler** | Manual/API driven | Automated (Cloud) | ❌ Manual |
 | **Data Portability** | **Prism-Port (Obsidian/Logseq Vault)** | JSON Export | JSON Export | Raw `.db` file |
@@ -822,7 +822,7 @@ Standard memory servers (like Mem0, Zep, or the baseline Anthropic MCP) act as p
 Mem0 and Zep are APIs that *can* be wrapped into an MCP server. Prism was built *for* MCP from day one. Instead of wasting tokens on "search" tool calls, Prism uses **MCP Prompts** (`/resume_session`) to inject context *before* the LLM thinks, and **MCP Resources** (`memory://project/handoff`) to attach live, subscribing context.
 
 #### 2. Academic-Grade Cognitive Computer Science
-The giants use standard RAG (Retrieval-Augmented Generation). Prism uses biological and academic models of memory: **ACT-R base-level activation** (`B_i = ln(Σ t_j^(-d))`) for recency–frequency re-ranking, **TurboQuant** for extreme vector compression, **Ebbinghaus curves** for importance decay, and **Sparse Distributed Memory (SDM)**. The result is retrieval quality that follows how human memory actually works — not just nearest-neighbor cosine distance. And all of it runs on a laptop without a Postgres/pgvector instance.
+The giants use standard RAG (Retrieval-Augmented Generation). Prism uses biological and academic models of memory: **ACT-R base-level activation** (`B_i = ln(Σ t_j^(-d))`) for recency–frequency re-ranking, **RotorQuant** for extreme vector compression, **Ebbinghaus curves** for importance decay, and **Sparse Distributed Memory (SDM)**. The result is retrieval quality that follows how human memory actually works — not just nearest-neighbor cosine distance. And all of it runs on a laptop without a Postgres/pgvector instance.
 
 #### 3. True Multi-Agent Coordination (CRDTs)
 If Cursor (Agent A) and Claude Desktop (Agent B) try to update a Mem0 or standard SQLite database at the exact same time, you get a race condition and data loss. Prism uses **Optimistic Concurrency Control (OCC) with CRDT OR-Maps** — mathematically guaranteeing that simultaneous agent edits merge safely. Enterprise-grade distributed systems on a local machine.
@@ -1073,7 +1073,7 @@ Prism is a **stdio-based MCP server** that manages persistent agent memory. Here
 │         ↕                                                │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │  Storage Engine                                    │  │
-│  │  Local: SQLite + FTS5 + TurboQuant + semantic_knowledge │
+│  │  Local: SQLite + FTS5 + RotorQuant + semantic_knowledge │
 │  │  Cloud: Supabase + pgvector                        │  │
 │  └────────────────────────────────────────────────────┘  │
 │         ↕                                                │
@@ -1105,7 +1105,7 @@ Prism is a **stdio-based MCP server** that manages persistent agent memory. Here
 | **Semantic Knowledge** | SQLite (`semantic_knowledge`) | Hebbian-style distilled rules with confidence scoring |
 | **Memory Links** | SQLite (`memory_links`) | Causal graph edges (`caused_by`, `led_to`, `synthesized_from`) |
 | **Keyword Search** | FTS5 virtual tables | Zero-dependency full-text search |
-| **Semantic Search** | TurboQuant compressed vectors | 10× compressed 768-dim embeddings, three-tier retrieval |
+| **Semantic Search** | RotorQuant compressed vectors | 10× compressed 768-dim embeddings, three-tier retrieval |
 | **Cloud Sync** | Supabase + pgvector | Optional multi-device/team sync |
 
 ### Auto-Load Architecture
@@ -1127,8 +1127,8 @@ Prism has evolved from smart session logging into a **cognitive memory architect
 
 | Phase | Feature | Inspired By | Status |
 |-------|---------|-------------|--------|
-| **v5.0** | TurboQuant 10× Compression — 4-bit quantized 768-dim vectors in <500 bytes | Vector quantization (product/residual PQ) | ✅ Shipped |
-| **v5.0** | Three-Tier Search — native → TurboQuant → FTS5 keyword fallback | Cascaded retrieval architectures | ✅ Shipped |
+| **v5.0** | RotorQuant 10× Compression — 4-bit quantized 768-dim vectors in <500 bytes | Vector quantization (PlanarQuant / Givens rotation) | ✅ Shipped |
+| **v5.0** | Three-Tier Search — native → RotorQuant → FTS5 keyword fallback | Cascaded retrieval architectures | ✅ Shipped |
 | **v5.2** | Smart Consolidation — extract principles, not just summaries | Neuroscience sleep consolidation | ✅ Shipped |
 | **v5.2** | Ebbinghaus Importance Decay — memories fade unless reinforced | Ebbinghaus forgetting curve | ✅ Shipped |
 | **v5.2** | Context-Weighted Retrieval — current work biases what surfaces | Contextual memory in cognitive science | ✅ Shipped |
@@ -1254,4 +1254,4 @@ MIT
 
 ---
 
-<sub>**Keywords:** MCP server, Model Context Protocol, Claude Desktop memory, persistent session memory, AI agent memory, cognitive architecture, ACT-R spreading activation, Hebbian learning, episodic semantic consolidation, multi-hop reasoning, uncertainty rejection gate, local-first, SQLite MCP, Mind Palace, time travel, visual memory, VLM image captioning, OpenTelemetry, GDPR, agent telepathy, multi-agent sync, behavioral memory, cursorrules, Ollama MCP, Brave Search MCP, TurboQuant, progressive context loading, knowledge management, LangChain retriever, LangGraph agent, enterprise AI agent infrastructure, autonomous cognitive OS, affect-tagged memory, valence engine, cognitive budget, surprisal gate</sub>
+<sub>**Keywords:** MCP server, Model Context Protocol, Claude Desktop memory, persistent session memory, AI agent memory, cognitive architecture, ACT-R spreading activation, Hebbian learning, episodic semantic consolidation, multi-hop reasoning, uncertainty rejection gate, local-first, SQLite MCP, Mind Palace, time travel, visual memory, VLM image captioning, OpenTelemetry, GDPR, agent telepathy, multi-agent sync, behavioral memory, cursorrules, Ollama MCP, Brave Search MCP, RotorQuant, progressive context loading, knowledge management, LangChain retriever, LangGraph agent, enterprise AI agent infrastructure, autonomous cognitive OS, affect-tagged memory, valence engine, cognitive budget, surprisal gate</sub>

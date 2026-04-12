@@ -23,9 +23,9 @@
 
 ## 1. The Vector Storage Engine (v5)
 
-Agentic memory suffers from "Float32 Bloat." Saving a 768-dimensional float32 embedding for every session quickly consumes hundreds of megabytes. Prism solves this using **TurboQuant** (Google ICLR 2026), achieving ~7× compression (3KB → 400 bytes) locally in pure TypeScript.
+Agentic memory suffers from "Float32 Bloat." Saving a 768-dimensional float32 embedding for every session quickly consumes hundreds of megabytes. Prism solves this using **RotorQuant** (PlanarQuant variant — Givens 2D rotation), achieving ~7× compression (3KB → 400 bytes) locally in pure TypeScript.
 
-### TurboQuant Compression & Asymmetric Similarity
+### RotorQuant Compression & Asymmetric Similarity
 When an agent saves a memory, Prism generates a float32 vector and immediately compresses it via a two-stage pipeline:
 1. **Random QR Rotation + Lloyd-Max**: Rotates the vector to make coordinates identically distributed (`N(0, 1/d)`), then applies optimal scalar quantization.
 2. **QJL Residual Correction**: Projects the quantization error through a random Gaussian matrix and stores the sign bits.
@@ -36,7 +36,7 @@ When an agent saves a memory, Prism generates a float32 vector and immediately c
 Prism guarantees search reliability across different environments via a cascading fallback:
 
 *   **Tier 1 (Native Vector)**: Uses `sqlite-vec` or `pgvector` DiskANN indexes on raw float32 data. Blazing fast (O(log n)), used for recent/hot data.
-*   **Tier 2 (JS TurboQuant)**: If native vectors are purged or the DB extension is missing, Prism falls back to calculating asymmetric cosine similarity in V8/Node.js against the 400-byte base64 blobs.
+*   **Tier 2 (JS RotorQuant)**: If native vectors are purged or the DB extension is missing, Prism falls back to calculating asymmetric cosine similarity in V8/Node.js against the 400-byte base64 blobs.
 *   **Tier 3 (FTS5 Keyword)**: Full-text search fallback if embeddings completely fail.
 
 ---
@@ -61,7 +61,7 @@ In multi-agent (Hivemind) setups, multiple agents might attempt to update the `s
 *   If the DB version has incremented (another agent saved), the DB rejects the write. The agent catches the conflict, re-reads the context, and merges its changes.
 
 ### Deep Storage Mode ("The Purge")
-To realize the storage savings of TurboQuant, v5.1 introduces **Deep Storage Purge**. 
+To realize the storage savings of RotorQuant, v5.1 introduces **Deep Storage Purge**. 
 *   **Hot Memory (< 7 days)**: Retains both `float32` and `turbo4` representations for blazing-fast Tier-1 native search.
 *   **Cold Memory (> 7 days)**: A scheduled task (or tool call) executes an atomic `UPDATE ... SET embedding = NULL` on old entries. 
 *   **Safety**: The purge strictly guards against deleting vectors that lack a `embedding_compressed` fallback, reclaiming ~90% of disk space without bricking semantic search.
@@ -244,7 +244,7 @@ graph LR
 | **TTL Sweep** | Hard-deletes entries exceeding project-level retention policies | Fast (SQL DELETE) |
 | **Importance Decay** | Applies Ebbinghaus curve (`0.95^days`) to old behavioral entries | Fast (SQL UPDATE) |
 | **Compaction** | Summarizes old entries via LLM, archives originals | Slow (LLM call) |
-| **Deep Purge** | NULLs float32 embeddings on entries with TurboQuant backups | Moderate (SQL UPDATE) |
+| **Deep Purge** | NULLs float32 embeddings on entries with RotorQuant backups | Moderate (SQL UPDATE) |
 
 ### Non-Blocking Design
 
