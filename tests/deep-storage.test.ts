@@ -4,15 +4,15 @@
  * ═══════════════════════════════════════════════════════════════════
  * WHAT IS DEEP STORAGE MODE?
  *
- *   v5.0 introduced TurboQuant, which compresses 768-dimensional float32
+ *   v5.0 introduced RotorQuant, which compresses 768-dimensional float32
  *   embeddings (3KB each) into ~400-byte blobs with 95%+ cosine accuracy.
  *   After compression, old entries have BOTH representations stored:
  *     - embedding (BLOB):            original float32 vector (3KB)
- *     - embedding_compressed (TEXT):  TurboQuant compressed blob (~400B)
+ *     - embedding_compressed (TEXT):  RotorQuant compressed blob (~400B)
  *
  *   v5.1 Deep Storage Mode ("The Purge") NULLs out the redundant float32
  *   column for old entries, reclaiming ~90% of vector storage while
- *   maintaining search accuracy via Tier-2 TurboQuant search.
+ *   maintaining search accuracy via Tier-2 RotorQuant search.
  *
  * WHAT THESE TESTS VERIFY:
  *
@@ -88,7 +88,7 @@ beforeAll(async () => {
   // for purge tests, only the presence/absence and byte size of the column.
   const float32Array = new Float32Array(768).fill(0.1); // 768 dims × 4 bytes = 3,072 bytes
   const float32Blob = Buffer.from(float32Array.buffer);
-  const compressedBlob = Buffer.from("dHVyYm9xdWFudC1ibG9i"); // ~20 bytes base64 (simulates TurboQuant output)
+  const compressedBlob = Buffer.from("dHVyYm9xdWFudC1ibG9i"); // ~20 bytes base64 (simulates RotorQuant output)
 
   // Helper to save a ledger entry with controlled timestamps and data
   const saveLedgerDirect = async (
