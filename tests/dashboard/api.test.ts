@@ -26,7 +26,18 @@
  * ═══════════════════════════════════════════════════════════════════
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+
+// Mock the LLM factory so synthesizeEdgesCore doesn't need a real API key.
+vi.mock("../../src/utils/llm/factory.js", () => ({
+  getLLMProvider: vi.fn(() => ({
+    generateText: vi.fn(async () => ""),
+    generateEmbedding: vi.fn(async () => [0, 0, 0]),
+  })),
+  _resetLLMProvider: vi.fn(),
+  _setLLMProviderForTest: vi.fn(),
+  isEmbeddingAvailable: vi.fn(() => true),
+}));
 import {
   createTestDb,
   TEST_PROJECT,

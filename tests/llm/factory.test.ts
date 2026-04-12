@@ -257,10 +257,9 @@ describe("LLM Provider Factory — Split Architecture", () => {
 
   // ── Auto-routing with OLLAMA_HOST env var ────────────────────────────────
 
-  it("auto + OLLAMA_HOST env → routes to OllamaAdapter", () => {
+  it("auto + ollama_base_url setting → routes to OllamaAdapter", () => {
     const infoSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    setEnvVars({ OLLAMA_HOST: "http://localhost:11434" });
-    mockProviders("gemini", "auto");
+    mockProviders("gemini", "auto", { ollama_base_url: "http://localhost:11434" });
     getLLMProvider();
     expect(GeminiAdapter).toHaveBeenCalledOnce();
     expect(mockOllamaAdapter).toHaveBeenCalledOnce();
@@ -268,10 +267,9 @@ describe("LLM Provider Factory — Split Architecture", () => {
     infoSpy.mockRestore();
   });
 
-  it("auto + OLLAMA_BASE_URL env → routes to OllamaAdapter", () => {
+  it("auto + ollama_base_url setting (anthropic text) → routes to OllamaAdapter", () => {
     const infoSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    setEnvVars({ OLLAMA_BASE_URL: "http://192.168.1.100:11434" });
-    mockProviders("anthropic", "auto", { anthropic_api_key: "sk-ant-test" });
+    mockProviders("anthropic", "auto", { anthropic_api_key: "sk-ant-test", ollama_base_url: "http://192.168.1.100:11434" });
     getLLMProvider();
     expect(AnthropicAdapter).toHaveBeenCalledOnce();
     expect(mockOllamaAdapter).toHaveBeenCalledOnce();
@@ -281,13 +279,12 @@ describe("LLM Provider Factory — Split Architecture", () => {
 
   // ── Voyage takes priority over Ollama in auto mode ───────────────────────
 
-  it("auto + VOYAGE_API_KEY + OLLAMA_HOST → Voyage wins", () => {
+  it("auto + voyage_api_key + ollama_base_url → Voyage wins", () => {
     const infoSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    setEnvVars({
-      VOYAGE_API_KEY: "pa-test-key",
-      OLLAMA_HOST: "http://localhost:11434",
+    mockProviders("gemini", "auto", {
+      voyage_api_key: "pa-test-key",
+      ollama_base_url: "http://localhost:11434",
     });
-    mockProviders("gemini", "auto");
     getLLMProvider();
     expect(mockVoyageAdapter).toHaveBeenCalledOnce();
     expect(mockOllamaAdapter).not.toHaveBeenCalled();

@@ -121,7 +121,7 @@ export function getLLMProvider(): LLMProvider {
         console.error(
           "[LLMFactory] text_provider=anthropic with embedding_provider=auto: " +
           "routing embeddings to GeminiAdapter (Anthropic has no native embedding API). " +
-          "Set embedding_provider=voyage or embedding_provider=llamacpp in the dashboard."
+          "Set embedding_provider=voyage, embedding_provider=ollama, or embedding_provider=llamacpp in the dashboard."
         );
       }
     }

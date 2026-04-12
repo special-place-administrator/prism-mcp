@@ -16,7 +16,7 @@ vi.mock("../../src/utils/supabaseApi.js", () => ({
 
 vi.mock("../../src/storage/configStorage.js", () => ({
   getSetting: vi.fn(async () => null),
-  getSettingSync: vi.fn(() => "false"),  // stub for config.ts PRISM_ENABLE_HIVEMIND
+  getSettingSync: vi.fn((_k: string, def?: string) => def ?? "false"),  // stub for config.ts; returns default when provided
   setSetting: vi.fn(async () => {}),
   getAllSettings: vi.fn(async () => ({})),
 }));
